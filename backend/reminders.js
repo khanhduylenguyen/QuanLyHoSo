@@ -167,25 +167,36 @@ async function runReminders({ dryRun = false } = {}) {
   };
 }
 
+let running = false;
+
+/**
+ * Gửi nhắc hạn nếu đã tới giờ và hôm nay chưa gửi (tối đa một lần / ngày, ghi ở settings.lastRunDate).
+ * Dùng chung cho bộ hẹn giờ trong server và API /api/cron/reminders (dịch vụ cron bên ngoài gọi,
+ * cần khi host "ngủ" lúc không có người dùng, vd. Render gói free).
+ */
+async function runDueReminders() {
+  const config = getSettings('reminders');
+  const today = day(todayVN());
+  if (running) return { skipped: 'RUNNING' };
+  if (!config.enabled) return { skipped: 'DISABLED' };
+  if (!isMailConfigured()) return { skipped: 'MAIL_NOT_CONFIGURED' };
+  if (config.lastRunDate === today) return { skipped: 'ALREADY_SENT_TODAY' };
+  if (nowVNTime() < config.sendTime) return { skipped: 'BEFORE_SEND_TIME', sendTime: config.sendTime };
+  running = true;
+  try {
+    // Ghi ngày chạy trước để không gửi trùng nếu server khởi động lại giữa chừng.
+    await saveSettings('reminders', { ...config, lastRunDate: today });
+    const result = await runReminders();
+    console.log(`[reminders] ${today}: gửi ${result.sent} email${result.errors.length ? `, lỗi ${result.errors.length}` : ''}`);
+    return { sent: result.sent, errors: result.errors.length };
+  } finally {
+    running = false;
+  }
+}
+
 /** Bộ hẹn giờ: mỗi phút kiểm tra, tới giờ thì chạy một lần trong ngày. */
 function startReminderScheduler() {
-  let running = false;
-  const tick = async () => {
-    const config = getSettings('reminders');
-    const today = day(todayVN());
-    if (running || !config.enabled || !isMailConfigured() || config.lastRunDate === today || nowVNTime() < config.sendTime) return;
-    running = true;
-    try {
-      // Ghi ngày chạy trước để không gửi trùng nếu server khởi động lại giữa chừng.
-      await saveSettings('reminders', { ...config, lastRunDate: today });
-      const result = await runReminders();
-      console.log(`[reminders] ${today}: gửi ${result.sent} email${result.errors.length ? `, lỗi ${result.errors.length}` : ''}`);
-    } catch (error) {
-      console.error('[reminders] Lỗi:', error.message);
-    } finally {
-      running = false;
-    }
-  };
+  const tick = () => runDueReminders().catch((error) => console.error('[reminders] Lỗi:', error.message));
   const timer = setInterval(tick, CHECK_INTERVAL_MS);
   timer.unref();
   return timer;
@@ -209,4 +220,4 @@ function validateReminderSettings(input) {
   };
 }
 
-module.exports = { runReminders, startReminderScheduler, validateReminderSettings };
+module.exports = { runReminders, runDueReminders, startReminderScheduler, validateReminderSettings };

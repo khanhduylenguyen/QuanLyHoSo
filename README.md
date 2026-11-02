@@ -5,6 +5,8 @@
 | backend/  | Express 5, Mongoose 9, date-fns, JWT (jsonwebtoken), bcryptjs      | 8081 |
 | frontend/ | Next.js 15 (App Router), Tailwind 3, TanStack Table 8, Lucide       | 8080 |
 
+Deploy miễn phí lên Vercel + Render: xem [DEPLOY.md](DEPLOY.md).
+
 ## Chạy (Windows PowerShell)
 
 Cần MongoDB (local hoặc Atlas). Sao chép `backend/.env.example` thành `backend/.env` rồi điền `MONGO_URI` và `JWT_SECRET`.
@@ -63,8 +65,8 @@ Hạn xử lý của một hồ sơ = **Gia hạn** → **Ngày hẹn trả (bi�
 - **Lịch sử xử lý** trong cửa sổ chi tiết hồ sơ: ai sửa gì, lúc nào (collection `dossierlogs`, `backend/audit.js`).
 - **Chuyển cán bộ / Gia hạn** bắt buộc nhập lý do (sửa trên bảng, trong form, phân công hàng loạt, hoặc nút 📅 Gia hạn ở
   cột Thao tác). Lý do ghi vào Lịch sử xử lý. Phân công lần đầu (hồ sơ chưa có cán bộ) không cần lý do.
-- **Tệp đính kèm** trong cửa sổ chi tiết: PDF, JPG/PNG, Word, Excel, tối đa 20 MB/tệp, 30 tệp/hồ sơ. Tệp lưu ở
-  `backend/uploads` (đổi bằng `UPLOAD_DIR`) — **nhớ sao lưu thư mục này cùng database**. Cán bộ gỡ được tệp mình tải lên;
+- **Tệp đính kèm** trong cửa sổ chi tiết: PDF, JPG/PNG, Word, Excel, tối đa 20 MB/tệp, 30 tệp/hồ sơ. Tệp lưu ngay trong
+  MongoDB (GridFS, bucket `attachmentFiles`) — sao lưu database là có cả tệp. Cán bộ gỡ được tệp mình tải lên;
   Admin / Văn thư gỡ được mọi tệp. Xoá hồ sơ thì xoá luôn tệp.
 - **Tra cứu nhanh** (ô cạnh nút Nhập hồ sơ): gõ đúng số biên nhận hoặc mã hồ sơ → mở ngay chi tiết.
 - **In phiếu theo dõi** (nút 🖨 ở cột Thao tác hoặc trong chi tiết): phiếu A4 gồm thông tin, quá trình xử lý, chỗ ký.

@@ -1,0 +1,42 @@
+# Render Blueprint cho backend (Express). Frontend deploy riêng trên Vercel — xem DEPLOY.md.
+# Biến có "sync: false" sẽ được Render hỏi khi tạo Blueprint (giá trị bí mật, không ghi vào repo).
+services:
+  - type: web
+    name: quanlyhoso-api
+    runtime: node
+    plan: free
+    region: singapore
+    rootDir: backend
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: MONGO_URI
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRES_IN
+        value: 8h
+      # Địa chỉ trang web trên Vercel, vd. https://quanlyhoso.vercel.app (không có dấu / ở cuối)
+      - key: CORS_ORIGINS
+        sync: false
+      - key: APP_URL
+        sync: false
+      # Khoá cho dịch vụ cron gọi /api/cron/reminders
+      - key: CRON_SECRET
+        generateValue: true
+      - key: TRUST_PROXY
+        value: "1"
+      - key: SMTP_HOST
+        value: smtp.gmail.com
+      - key: SMTP_PORT
+        value: "465"
+      - key: SMTP_SECURE
+        value: "true"
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false

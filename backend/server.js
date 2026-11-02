@@ -3,7 +3,6 @@ require('dotenv').config({ quiet: true });
 const express = require('express');
 const cors = require('cors');
 const crypto = require('node:crypto');
-const path = require('node:path');
 const mongoose = require('mongoose');
 const jwt = require('jsonwebtoken');
 const { addDays, startOfDay, endOfDay } = require('date-fns');
@@ -79,7 +78,7 @@ const { loginByUser, loginByIp, passwordResetByIp } = require('./rateLimit');
 const { DossierLog, diffDossier, logDossier, logMany, redactLog } = require('./audit');
 const { loadSettings, getSettings, saveSettings, effectiveRules, validateDeadlineSettings, todayVN } = require('./settings');
 const { buildSummary, buildMonthly, buildOldestOverdue, buildDossierWorkbook, buildSummaryWorkbook } = require('./reports');
-const { runReminders, startReminderScheduler, validateReminderSettings } = require('./reminders');
+const { runReminders, runDueReminders, startReminderScheduler, validateReminderSettings } = require('./reminders');
 const {
   Attachment,
   ATTACHMENT_TYPES,
@@ -88,9 +87,12 @@ const {
   ALLOWED_EXTENSIONS,
   attachmentUpload,
   decodeName,
-  filePathOf,
+  mimeTypeOf,
+  saveFile,
+  openFile,
   removeFile,
   removeAttachmentsFor,
+  migrateAttachmentIndexes,
 } = require('./attachments');
 
 const pickFields = (source, allowed) =>
@@ -237,6 +239,11 @@ const validateIdParam = (req, res, next) => {
 /* ------------------------------------------------------------------ */
 
 const app = express();
+// Chạy sau reverse proxy (Render, Nginx…): đặt TRUST_PROXY (vd. 1) để req.ip là IP người dùng thay vì IP proxy.
+if (process.env.TRUST_PROXY) {
+  const hops = Number(process.env.TRUST_PROXY);
+  app.set('trust proxy', Number.isInteger(hops) ? hops : process.env.TRUST_PROXY === 'true');
+}
 
 app.use(
   cors({
@@ -246,6 +253,23 @@ app.use(
   })
 );
 app.use(express.json({ limit: '1mb' }));
+
+// Dịch vụ cron bên ngoài gọi định kỳ (vd. 10 phút / lần) với header "Authorization: Bearer <CRON_SECRET>":
+// vừa giữ server không "ngủ" (Render free), vừa gửi nhắc hạn đúng giờ cấu hình (tối đa 1 lần / ngày).
+const CRON_SECRET = process.env.CRON_SECRET || '';
+const isCronAuthorized = (req) => {
+  const given = String(req.header('authorization') || '').replace(/^Bearer\s+/i, '');
+  return Boolean(CRON_SECRET) && given.length === CRON_SECRET.length &&
+    crypto.timingSafeEqual(Buffer.from(given), Buffer.from(CRON_SECRET));
+};
+app.all(
+  '/api/cron/reminders',
+  asyncHandler(async (req, res) => {
+    if (!CRON_SECRET) throw new HttpError(404, 'Chưa bật CRON_SECRET');
+    if (!isCronAuthorized(req)) throw new HttpError(401, 'Sai khoá cron');
+    res.json({ data: await runDueReminders() });
+  })
+);
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', db: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected' });
@@ -786,24 +810,25 @@ api.post(
     if (!req.file) throw new HttpError(400, 'Chưa chọn tệp');
     const loai = Object.hasOwn(ATTACHMENT_TYPES, req.body?.loai) ? req.body.loai : 'KHAC';
     const originalName = decodeName(req.file.originalname);
+    const fileId = await saveFile(req.file.buffer, originalName);
     let attachment;
     try {
       attachment = await Attachment.create({
         dossier: req.dossier._id,
         originalName,
-        storedName: req.file.filename,
-        mimeType: ALLOWED_EXTENSIONS[path.extname(originalName).toLowerCase()],
+        fileId,
+        mimeType: mimeTypeOf(originalName),
         size: req.file.size,
         loai,
         uploadedBy: req.auth.userId,
         uploadedByName: req.auth.user.hoTen || req.auth.user.username,
       });
     } catch (error) {
-      await removeFile(req.file.filename);
+      await removeFile({ fileId });
       throw error;
     }
     await logDossier(req.auth, req.dossier, 'ATTACH', { note: `${ATTACHMENT_TYPES[loai]}: ${originalName}` });
-    const { storedName, ...data } = attachment.toObject();
+    const { fileId: _fileId, storedName, ...data } = attachment.toObject();
     res.status(201).json({ data });
   })
 );
@@ -812,11 +837,15 @@ api.get(
   '/attachments/:id/download',
   asyncHandler(async (req, res) => {
     const { attachment } = await loadScopedAttachment(req);
+    const stream = openFile(attachment);
+    stream.once('error', () => {
+      if (!res.headersSent) res.status(404).json({ message: 'Tệp không còn trên máy chủ' });
+      else res.destroy();
+    });
     res.attachment(attachment.originalName);
     res.type(attachment.mimeType);
-    res.sendFile(filePathOf(attachment), (error) => {
-      if (error && !res.headersSent) res.status(404).json({ message: 'Tệp không còn trên máy chủ' });
-    });
+    res.setHeader('Content-Length', attachment.size);
+    stream.pipe(res);
   })
 );
 
@@ -829,7 +858,7 @@ api.delete(
       throw new HttpError(403, 'Bạn chỉ gỡ được tệp do mình tải lên');
     }
     await Attachment.deleteOne({ _id: attachment._id });
-    await removeFile(attachment.storedName);
+    await removeFile(attachment);
     await logDossier(req.auth, dossier, 'DETACH', { note: `${ATTACHMENT_TYPES[attachment.loai] ?? ''}: ${attachment.originalName}` });
     res.json({ data: { _id: attachment._id } });
   })
@@ -1434,10 +1463,12 @@ async function start() {
   try {
     await mongoose.connect(MONGO_URI);
     await loadSettings();
+    await migrateAttachmentIndexes();
     startReminderScheduler();
     // Che user:password khi in log.
     console.log(`MongoDB connected: ${MONGO_URI.replace(/\/\/[^@/]+@/, '//***@')}`);
-    app.listen(PORT, () => console.log(`API listening on http://localhost:${PORT}`));
+    // 0.0.0.0: host như Render yêu cầu lắng nghe trên mọi địa chỉ.
+    app.listen(PORT, '0.0.0.0', () => console.log(`API listening on http://localhost:${PORT}`));
   } catch (error) {
     console.error('Không thể kết nối MongoDB:', error.message);
     process.exit(1);
