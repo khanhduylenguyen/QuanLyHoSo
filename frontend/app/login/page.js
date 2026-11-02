@@ -13,8 +13,6 @@ const HIGHLIGHTS = [
   { value: '7 ngày', label: 'Cảnh báo sớm' },
 ];
 
-const DEMO_USERNAMES = ['admin', 'canbo_a', 'canbo_b', 'vanthu'];
-
 const inputClass =
   'w-full rounded-lg border border-slate-200 bg-slate-50 py-3 pl-10 text-sm text-slate-900 placeholder:text-slate-400 ' +
   'transition duration-200 focus:border-red-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-red-100 ' +
@@ -291,17 +289,6 @@ export default function LoginPage() {
             </button>
           </form>
           )}
-
-          <p className="mt-8 border-t border-slate-100 pt-5 text-xs leading-relaxed text-slate-400">
-            Tài khoản demo:{' '}
-            {DEMO_USERNAMES.map((name, index) => (
-              <span key={name}>
-                {index > 0 && ', '}
-                <code className="font-semibold text-slate-600">{name}</code>
-              </span>
-            ))}{' '}
-            — mật khẩu mặc định <code className="font-semibold text-slate-600">123456</code>
-          </p>
         </div>
       </section>
     </main>
