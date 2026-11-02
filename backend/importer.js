@@ -124,7 +124,7 @@ const TEMPLATE_COLUMNS = [
   { header: 'Ngày hẹn trả (theo BN)', width: 14, date: true },
   { header: 'Gia hạn (nếu có)', width: 14, date: true },
   { header: 'Kết thúc Quy trình (ĐÁNH X)', width: 12 },
-  { header: 'Ngày trình VPUB', width: 14, date: true },
+  { header: 'Ngày trình VPUB', width: 22 },
   { header: 'Ngày kết thúc', width: 14, date: true },
   { header: 'Diễn giải', width: 40 },
   { header: 'GHI CHÚ', width: 24 },
@@ -164,18 +164,38 @@ const DATE_IN_TEXT = /(\d{1,2})\/(\d{1,2})\/(\d{2,4})/g;
 const isPlausible = (date) => date.getUTCFullYear() >= 2000 && date.getUTCFullYear() <= 2100;
 
 /** Ngày từ ô Excel: Date, hoặc chuỗi chứa dd/mm/yyyy (nhiều ngày → lấy ngày `pick`). */
-function toDate(value, pick = 'first') {
-  if (value instanceof Date) return Number.isNaN(value.getTime()) || !isPlausible(value) ? null : value;
-  if (typeof value !== 'string') return null;
-  const dates = [...value.matchAll(DATE_IN_TEXT)]
+/** Mọi ngày hợp lệ trong một ô (ô ngày Excel, hoặc chữ có nhiều ngày như "05/03/2026, 12/03/2026"). */
+function toDates(value) {
+  if (value instanceof Date) return Number.isNaN(value.getTime()) || !isPlausible(value) ? [] : [value];
+  if (typeof value !== 'string') return [];
+  return [...value.matchAll(DATE_IN_TEXT)]
     .map(([, d, m, y]) => {
       const year = y.length === 2 ? 2000 + Number(y) : Number(y);
       const date = new Date(Date.UTC(year, Number(m) - 1, Number(d)));
       return date.getUTCDate() === Number(d) && date.getUTCMonth() === Number(m) - 1 && isPlausible(date) ? date : null;
     })
     .filter(Boolean);
+}
+
+function toDate(value, pick = 'first') {
+  const dates = toDates(value);
   if (dates.length === 0) return null;
   return pick === 'last' ? dates[dates.length - 1] : dates[0];
+}
+
+/**
+ * Các lần trình từ cột "Ngày trình LĐ" và "Ngày trình VPUB" (mỗi ô có thể ghi nhiều ngày).
+ * Sổ không ghi kết quả nên ketQua để trống; lần trình VPUB ghi chú "Trình VPUB". Trùng ngày chỉ giữ một.
+ */
+function submissionsFrom(trinhLD, trinhVPUB, fixYear) {
+  const byDay = new Map();
+  for (const [raw, ghiChu] of [[trinhLD, ''], [trinhVPUB, 'Trình VPUB']]) {
+    for (const date of toDates(raw)) {
+      const ngay = fixYear(date);
+      if (ngay && !byDay.has(isoDay(ngay))) byDay.set(isoDay(ngay), { ngay, ketQua: '', ghiChu });
+    }
+  }
+  return [...byDay.values()].sort((a, b) => a.ngay - b.ngay);
 }
 
 const latest = (...dates) => dates.filter(Boolean).sort((a, b) => b - a)[0] ?? null;
@@ -350,6 +370,7 @@ function readSheet(ws, sheetConfig, header, issues) {
       ngayHenTra: fixYear(toDate(get(row, 'henTra'))),
       ngayGiaHan: fixYear(toDate(get(row, 'giaHan'), 'last')),
       ngayTrinhThucTe: fixYear(latest(toDate(get(row, 'trinhVPUB'), 'last'), toDate(get(row, 'trinhLD'), 'last'))),
+      lanTrinh: submissionsFrom(get(row, 'trinhLD'), get(row, 'trinhVPUB'), fixYear),
       ngayKetThuc: fixYear(toDate(ketThucRaw, 'last')),
       ketThucX: get(row, 'ketThucX'),
       treHanX: get(row, 'treHan'),
@@ -397,6 +418,7 @@ function mergeSheets(sheetRecords) {
         for (const field of FILLABLE) {
           if (!isMarked(target[field]) && isMarked(r[field])) target[field] = r[field];
         }
+        if (!target.lanTrinh?.length && r.lanTrinh?.length) target.lanTrinh = r.lanTrinh;
         target.hasLateColumn ||= r.hasLateColumn;
       } else {
         added++;
@@ -604,6 +626,7 @@ async function commitImport(records, { batchId, fileName, createNewOfficers = fa
       ngayTrinhLanhDao: deadlines.ngayTrinhLanhDao,
       ngayHetHan: r.ngayGiaHan || r.ngayHenTra || deadlines.ngayHetHan,
       ngayTrinhThucTe: r.ngayTrinhThucTe,
+      lanTrinh: r.lanTrinh ?? [],
       ngayKetThuc: r.ngayKetThuc,
       treHanTheoSo: registerLateFlag(r),
       canBoThuLy: r.officer ? officerIds.get(r.officer) : null,
@@ -689,6 +712,7 @@ async function buildTemplate() {
     ['CBTL', 'Chọn cán bộ trong danh sách. Tên mới chưa có tài khoản: khi xem trước có thể chọn tạo tài khoản (chưa có mật khẩu) hoặc để Chưa phân công.'],
     ['Ngày hẹn trả / Gia hạn', 'Để trống thì hạn xử lý = Ngày nhận + hạn mặc định của loại thủ tục.'],
     ['Kết thúc Quy trình', 'Đánh "x" nếu hồ sơ đã giải quyết xong.'],
+    ['Ngày trình VPUB', 'Trình nhiều lần thì ghi các ngày cách nhau bởi dấu phẩy (vd. 05/03/2026, 12/03/2026) — mỗi ngày là một lần trình.'],
     ['Trùng hồ sơ', 'Hồ sơ đã có trong hệ thống (cùng Tên + Địa chỉ + Ngày nhận, hoặc cùng Số biên nhận + Tên) được bỏ qua.'],
     ['Có thể tải lên sổ cũ', 'Hệ thống cũng đọc được sổ theo dõi nhiều sheet (tiêu đề ở dòng bất kỳ trong 12 dòng đầu).'],
     ['', ''],
@@ -696,13 +720,14 @@ async function buildTemplate() {
     ...Object.values(PHAN_LOAI_RULES).map((rule) => [rule.moTa, `${rule.hetHan} ngày`]),
   ].forEach((row) => guide.addRow(row));
   guide.getRow(1).font = { bold: true, size: 14 };
-  guide.getRow(12).font = { bold: true };
+  guide.getRow(13).font = { bold: true };
   guide.getColumn(2).alignment = { wrapText: true };
 
   return wb.xlsx.writeBuffer();
 }
 
 module.exports = {
+  submissionsFrom,
   readWorkbook,
   analyzeImport,
   previewCodes,

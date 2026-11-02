@@ -6,7 +6,7 @@ import { format, parseISO } from 'date-fns';
 import { ArrowLeft, LoaderCircle, Printer } from 'lucide-react';
 import { ACTIONS, FIELD_LABELS, displayValue } from '@/components/DossierHistory';
 import { api } from '@/lib/api';
-import { TRANG_THAI_LABELS, formatDate, getUserName, isFieldHidden } from '@/lib/dossier';
+import { KET_QUA_TRINH_LABELS, TRANG_THAI_LABELS, formatDate, getUserName, isFieldHidden, submissionsOf } from '@/lib/dossier';
 import { useAuth } from '@/lib/useAuth';
 
 function Row({ label, children }) {
@@ -109,7 +109,19 @@ export default function PrintDossierPage() {
             <Row label="Gia hạn đến">{optionalDate(dossier.ngayGiaHan)}</Row>
             <Row label="Hạn trình Lãnh đạo">{optionalDate(dossier.ngayTrinhLanhDao)}</Row>
             <Row label="Hạn xử lý">{optionalDate(dossier.ngayHetHan)}</Row>
-            <Row label="Ngày trình thực tế">{optionalDate(dossier.ngayTrinhThucTe)}</Row>
+            <Row label="Các lần trình Lãnh đạo">
+              {submissionsOf(dossier).length > 0 && (
+                <ol className="list-decimal pl-4">
+                  {submissionsOf(dossier).map((item, index) => (
+                    // eslint-disable-next-line react/no-array-index-key
+                    <li key={index}>
+                      {formatDate(item.ngay)} — {KET_QUA_TRINH_LABELS[item.ketQua ?? '']}
+                      {item.ghiChu && `: ${item.ghiChu}`}
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </Row>
             <Row label="Ngày kết thúc">{optionalDate(dossier.ngayKetThuc)}</Row>
             <Row label="Cán bộ thụ lý">{getUserName(dossier.canBoThuLy) || 'Chưa phân công'}</Row>
             <Row label="Trạng thái">{TRANG_THAI_LABELS[dossier.trangThai] ?? dossier.trangThai}</Row>

@@ -14,6 +14,8 @@ const {
   TRANG_THAI,
   calculateDeadlines,
   MUC_DO_UU_TIEN,
+  KET_QUA_TRINH,
+  LAN_TRINH_MAX,
   PASSWORD_MIN_LENGTH,
   USERNAME_PATTERN,
   EMAIL_PATTERN,
@@ -42,20 +44,22 @@ const SENSITIVE_FIELDS = Object.freeze(['chiDaoLanhDao', 'mucDoUuTien']);
 const ASSIGNEE_FIELDS = 'username hoTen role';
 
 // Trường mà mỗi role được phép ghi khi tạo/sửa hồ sơ.
+// ngayTrinhThucTe không ghi trực tiếp: tự lấy từ lần trình gần nhất trong lanTrinh.
 const OFFICE_WRITABLE_FIELDS = [
   'maHoSo', 'soBienNhan', 'tenHoSo', 'diaChi', 'donViGui', 'phanLoai',
-  'ngayVao', 'ngayHenTra', 'ngayGiaHan', 'ngayTrinhThucTe', 'ngayKetThuc',
+  'ngayVao', 'ngayHenTra', 'ngayGiaHan', 'ngayKetThuc', 'lanTrinh',
   'canBoThuLy', 'ghiChuCanBo', 'ghiChu', 'chiDaoLanhDao', 'mucDoUuTien', 'trangThai',
 ];
 const WRITABLE_FIELDS = Object.freeze({
   ADMIN: OFFICE_WRITABLE_FIELDS,
   VAN_THU: OFFICE_WRITABLE_FIELDS,
-  CAN_BO: ['trangThai', 'ghiChuCanBo'],
+  // Cán bộ thụ lý là người trình hồ sơ nên được ghi các lần trình của hồ sơ mình.
+  CAN_BO: ['trangThai', 'ghiChuCanBo', 'lanTrinh'],
 });
 
 // Ngày bắt buộc / ngày tuỳ chọn (gửi '' hoặc null để xoá).
 const REQUIRED_DATE_FIELDS = ['ngayVao'];
-const OPTIONAL_DATE_FIELDS = ['ngayHenTra', 'ngayGiaHan', 'ngayTrinhThucTe', 'ngayKetThuc'];
+const OPTIONAL_DATE_FIELDS = ['ngayHenTra', 'ngayGiaHan', 'ngayKetThuc'];
 
 // Role được phép thực hiện từng thao tác. Dùng cho cả authorize() lẫn
 // ma trận phân quyền trả về trang quản trị, nên hai nơi luôn khớp nhau.
@@ -224,8 +228,23 @@ const buildPayload = (body, role) => {
   if ('mucDoUuTien' in payload && !MUC_DO_UU_TIEN.includes(payload.mucDoUuTien)) {
     throw new HttpError(400, `mucDoUuTien phải thuộc: ${MUC_DO_UU_TIEN.join(', ')}`);
   }
+  if ('lanTrinh' in payload) payload.lanTrinh = parseSubmissions(payload.lanTrinh);
   return payload;
 };
+
+/** Danh sách lần trình gửi lên (thay cả danh sách): [{ ngay, ketQua, ghiChu }]. */
+function parseSubmissions(list) {
+  if (list === null) return [];
+  if (!Array.isArray(list)) throw new HttpError(400, 'lanTrinh phải là danh sách');
+  if (list.length > LAN_TRINH_MAX) throw new HttpError(400, `Tối đa ${LAN_TRINH_MAX} lần trình`);
+  return list.map((item, index) => {
+    const ngay = new Date(item?.ngay);
+    if (!item?.ngay || Number.isNaN(ngay.getTime())) throw new HttpError(400, `Lần trình ${index + 1}: ngày trình không hợp lệ`);
+    const ketQua = String(item.ketQua ?? 'CHO_Y_KIEN');
+    if (!KET_QUA_TRINH.includes(ketQua)) throw new HttpError(400, `Lần trình ${index + 1}: kết quả không hợp lệ`);
+    return { ngay, ketQua, ghiChu: String(item.ghiChu ?? '').trim().slice(0, 500) };
+  });
+}
 
 const validateIdParam = (req, res, next) => {
   if (!mongoose.isValidObjectId(req.params.id)) {
@@ -1327,14 +1346,30 @@ importRouter.get(
   })
 );
 
+// Hoàn tác lô từ ngưỡng này trở lên phải gửi ?confirm=<số hồ sơ> (người dùng gõ lại) để tránh bấm nhầm.
+const UNDO_CONFIRM_MIN = 20;
+
 importRouter.delete(
   '/batches/:batchId',
   asyncHandler(async (req, res) => {
-    const batchFilter = { 'nguonNhap.lanNhap': String(req.params.batchId) };
-    const batchIds = await Dossier.find(batchFilter).distinct('_id');
-    const { deletedCount } = await Dossier.deleteMany({ _id: { $in: batchIds } });
-    await removeAttachmentsFor(batchIds);
-    if (deletedCount === 0) throw new HttpError(404, 'Không tìm thấy lần nhập này');
+    const dossiers = await Dossier.find({ 'nguonNhap.lanNhap': String(req.params.batchId) })
+      .select('maHoSo tenHoSo nguonNhap.tep')
+      .lean();
+    if (dossiers.length === 0) throw new HttpError(404, 'Không tìm thấy lần nhập này');
+    if (dossiers.length >= UNDO_CONFIRM_MIN && Number(req.query.confirm) !== dossiers.length) {
+      throw new HttpError(400, `Lần nhập này có ${dossiers.length} hồ sơ — xác nhận bằng cách nhập đúng số ${dossiers.length}`);
+    }
+
+    const ids = dossiers.map((d) => d._id);
+    const { deletedCount } = await Dossier.deleteMany({ _id: { $in: ids } });
+    await removeAttachmentsFor(ids);
+    // Ghi nhật ký từng hồ sơ bị xoá để còn biết ai hoàn tác, lúc nào (và khôi phục được từ file gốc).
+    const fileName = dossiers[0].nguonNhap?.tep || 'Excel';
+    await logMany(
+      req.auth,
+      dossiers.map((d) => ({ dossier: d._id, maHoSo: d.maHoSo, action: 'DELETE', note: `Hoàn tác lần nhập ${fileName}: ${d.tenHoSo}` }))
+    );
+    console.warn(`[import] ${req.auth.user.username} hoàn tác lần nhập ${req.params.batchId} (${fileName}): xoá ${deletedCount} hồ sơ`);
     res.json({ data: { deleted: deletedCount } });
   })
 );
@@ -1346,7 +1381,7 @@ api.use('/import', importRouter);
 /* ------------------------------------------------------------------ */
 
 const REPORT_FIELDS =
-  'maHoSo soBienNhan tenHoSo diaChi phanLoai loaiHoSoGoc ngayVao ngayTrinhLanhDao ngayTrinhThucTe ngayHetHan ngayKetThuc treHanTheoSo trangThai canBoThuLy ghiChuCanBo ghiChu chiDaoLanhDao mucDoUuTien';
+  'maHoSo soBienNhan tenHoSo diaChi phanLoai loaiHoSoGoc ngayVao ngayTrinhLanhDao ngayTrinhThucTe lanTrinh ngayHetHan ngayKetThuc treHanTheoSo trangThai canBoThuLy ghiChuCanBo ghiChu chiDaoLanhDao mucDoUuTien';
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 const parsePeriod = (query) => {

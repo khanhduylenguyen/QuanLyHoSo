@@ -21,6 +21,7 @@ import {
   ShieldOff,
   Sparkles,
   Trash2,
+  Undo2,
   UserCog,
 } from 'lucide-react';
 import { InlineDate, InlineSelect, InlineText } from '@/components/InlineFields';
@@ -68,11 +69,19 @@ const toTime = (value) => (value ? new Date(value).getTime() : 0);
 const pill = 'inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px]';
 
 function SubmitPill({ record }) {
-  const { status, daysLeft } = getSubmitStatus(record);
+  const { status, daysLeft, count } = getSubmitStatus(record);
+  const times = count > 1 ? ` (lần ${count})` : '';
+  if (status === 'returned') {
+    return (
+      <span className={`${pill} border border-orange-300 bg-orange-100 font-bold text-orange-800`}>
+        <Undo2 className="h-3 w-3" /> LĐ trả lại{times} — cần trình lại
+      </span>
+    );
+  }
   if (status === 'submitted') {
     return (
       <span className={`${pill} border border-emerald-200 bg-emerald-50 font-semibold text-emerald-700`}>
-        <CircleCheck className="h-3 w-3" /> Đã trình LĐ
+        <CircleCheck className="h-3 w-3" /> Đã trình LĐ{times}
       </span>
     );
   }

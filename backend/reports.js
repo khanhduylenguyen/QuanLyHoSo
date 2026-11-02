@@ -164,6 +164,15 @@ function styleHeader(ws) {
   ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: ws.columnCount } };
 }
 
+const KET_QUA_TRINH_LABELS = { CHO_Y_KIEN: 'Chờ ý kiến', TRA_LAI: 'Trả lại bổ sung', DA_DUYET: 'Đã duyệt' };
+const dmy = (value) => new Date(value).toISOString().slice(0, 10).split('-').reverse().join('/');
+
+/** "1) 05/03/2026 Trả lại bổ sung: thiếu bản vẽ; 2) 12/03/2026 Đã duyệt" */
+const submissionText = (d) =>
+  (d.lanTrinh ?? [])
+    .map((l, i) => `${i + 1}) ${dmy(l.ngay)}${l.ketQua ? ` ${KET_QUA_TRINH_LABELS[l.ketQua]}` : ''}${l.ghiChu ? `: ${l.ghiChu}` : ''}`)
+    .join('; ');
+
 /** Danh sách hồ sơ → Excel (cột nhạy cảm chỉ có khi includeSensitive). */
 async function buildDossierWorkbook(dossiers, { includeSensitive }) {
   const today = day(todayVN());
@@ -182,7 +191,9 @@ async function buildDossierWorkbook(dossiers, { includeSensitive }) {
     { header: 'Loại hồ sơ (trong sổ)', key: 'loaiGoc', width: 28 },
     { header: 'CBTL', key: 'canBo', width: 18 },
     { header: 'Hạn trình LĐ', key: 'ngayTrinhLanhDao', width: 12, date: true },
-    { header: 'Ngày trình thực tế', key: 'ngayTrinhThucTe', width: 12, date: true },
+    { header: 'Ngày trình gần nhất', key: 'ngayTrinhThucTe', width: 12, date: true },
+    { header: 'Số lần trình', key: 'soLanTrinh', width: 8 },
+    { header: 'Các lần trình LĐ', key: 'cacLanTrinh', width: 40 },
     { header: 'Ngày hẹn trả / Hạn xử lý', key: 'ngayHetHan', width: 13, date: true },
     { header: 'Ngày kết thúc', key: 'ngayKetThuc', width: 12, date: true },
     { header: 'Trạng thái', key: 'trangThai', width: 15 },
@@ -211,6 +222,8 @@ async function buildDossierWorkbook(dossiers, { includeSensitive }) {
       canBo: d.canBoThuLy ? officerName(d) : '',
       ngayTrinhLanhDao: toExcelDate(d.ngayTrinhLanhDao),
       ngayTrinhThucTe: toExcelDate(d.ngayTrinhThucTe),
+      soLanTrinh: d.lanTrinh?.length || (d.ngayTrinhThucTe ? 1 : ''),
+      cacLanTrinh: submissionText(d),
       ngayHetHan: toExcelDate(d.ngayHetHan),
       ngayKetThuc: toExcelDate(d.ngayKetThuc),
       trangThai: TRANG_THAI_LABELS[d.trangThai] ?? d.trangThai,

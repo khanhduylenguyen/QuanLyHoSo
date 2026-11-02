@@ -102,7 +102,9 @@ export const api = {
   },
   importCommit: (importId, options) => request(`/import/${importId}/commit`, { method: 'POST', body: options }),
   importBatches: () => request('/import/batches'),
-  importUndo: (batchId) => request(`/import/batches/${batchId}`, { method: 'DELETE' }),
+  // confirm: số hồ sơ người dùng gõ lại (bắt buộc với lần nhập lớn).
+  importUndo: (batchId, confirm) =>
+    request(`/import/batches/${batchId}?${toSearchParams({ confirm })}`, { method: 'DELETE' }),
   importTemplate: () => request('/import/template', { responseType: 'blob' }),
 
   // Quản trị hệ thống (chỉ ADMIN)

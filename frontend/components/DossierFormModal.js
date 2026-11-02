@@ -5,6 +5,7 @@ import { format, isValid, parseISO } from 'date-fns';
 import { CalendarClock, Cpu, FilePlus2, FilePen, KeyRound, Lock, Printer, Save, Send, X } from 'lucide-react';
 import DossierHistory from '@/components/DossierHistory';
 import DossierAttachments from '@/components/DossierAttachments';
+import SubmissionsEditor from '@/components/SubmissionsEditor';
 import {
   MUC_DO_UU_TIEN_LABELS,
   TRANG_THAI_LABELS,
@@ -12,6 +13,7 @@ import {
   dayUnit,
   getUserName,
   openPrintForm,
+  submissionsOf,
   toDateInputValue,
 } from '@/lib/dossier';
 
@@ -30,8 +32,12 @@ const emptyForm = (defaultLoai = '') => ({
   ghiChu: '',
   chiDaoLanhDao: '',
   mucDoUuTien: 'TRUNG_BINH',
+  lanTrinh: [],
   lyDo: '',
 });
+
+const toSubmissionRows = (dossier) =>
+  submissionsOf(dossier).map((item) => ({ ngay: toDateInputValue(item.ngay), ketQua: item.ketQua ?? '', ghiChu: item.ghiChu ?? '' }));
 
 const toFormState = (dossier) => ({
   maHoSo: dossier.maHoSo ?? '',
@@ -48,6 +54,7 @@ const toFormState = (dossier) => ({
   ghiChu: dossier.ghiChu ?? '',
   chiDaoLanhDao: dossier.chiDaoLanhDao ?? '',
   mucDoUuTien: dossier.mucDoUuTien ?? 'TRUNG_BINH',
+  lanTrinh: toSubmissionRows(dossier),
   lyDo: '',
 });
 
@@ -123,8 +130,11 @@ export default function DossierFormModal({ open, dossier, role, userId, meta, ca
     setSubmitting(true);
     setError(null);
 
+    // Chỉ gửi các lần trình khi có thay đổi (tránh ghi đè ngày trình của hồ sơ cũ).
+    const submissionsChanged = JSON.stringify(form.lanTrinh) !== JSON.stringify(dossier ? toSubmissionRows(dossier) : []);
+    const lanTrinh = submissionsChanged ? { lanTrinh: form.lanTrinh.map((item) => ({ ...item, ghiChu: item.ghiChu.trim() })) } : {};
     const body = progressOnly
-      ? { trangThai: form.trangThai, ghiChuCanBo: form.ghiChuCanBo.trim() }
+      ? { trangThai: form.trangThai, ghiChuCanBo: form.ghiChuCanBo.trim(), ...lanTrinh }
       : {
           maHoSo: form.maHoSo.trim(),
           soBienNhan: form.soBienNhan.trim(),
@@ -140,6 +150,7 @@ export default function DossierFormModal({ open, dossier, role, userId, meta, ca
           ghiChu: form.ghiChu.trim(),
           chiDaoLanhDao: form.chiDaoLanhDao.trim() || null,
           mucDoUuTien: form.mucDoUuTien,
+          ...lanTrinh,
           ...(needsReason && { lyDo: form.lyDo.trim() }),
         };
 
@@ -310,6 +321,12 @@ export default function DossierFormModal({ open, dossier, role, userId, meta, ca
               </div>
             </div>
           </div>
+
+          <SubmissionsEditor
+            value={form.lanTrinh}
+            onChange={(lanTrinh) => setForm((prev) => ({ ...prev, lanTrinh }))}
+            minDate={form.ngayVao || undefined}
+          />
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <label className="block">

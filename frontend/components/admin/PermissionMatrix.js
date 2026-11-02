@@ -16,6 +16,7 @@ const FIELD_LABELS = {
   ngayHenTra: 'Ngày hẹn trả (tự tính lại hạn)',
   ngayGiaHan: 'Gia hạn (tự tính lại hạn)',
   ngayTrinhThucTe: 'Ngày trình thực tế',
+  lanTrinh: 'Các lần trình LĐ',
   ngayKetThuc: 'Ngày kết thúc',
   canBoThuLy: 'Cán bộ thụ lý',
   ghiChuCanBo: 'Diễn giải / tiến độ',

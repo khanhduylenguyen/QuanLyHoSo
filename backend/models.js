@@ -19,6 +19,10 @@ const TRANG_THAI = Object.freeze([
 
 const MUC_DO_UU_TIEN = Object.freeze(['THAP', 'TRUNG_BINH', 'CAO', 'KHAN_CAP']);
 
+// Kết quả một lần trình Lãnh đạo. '' = chưa ghi (dữ liệu lấy từ sổ cũ không có kết quả).
+const KET_QUA_TRINH = Object.freeze(['CHO_Y_KIEN', 'TRA_LAI', 'DA_DUYET', '']);
+const LAN_TRINH_MAX = 20;
+
 /**
  * Tính ngayTrinhLanhDao và ngayHetHan từ ngayVao + phanLoai theo cấu hình đang áp dụng
  * (thời hạn từng loại, ngày làm việc / ngày lịch, ngày lễ — xem settings.js, catalog.js).
@@ -136,8 +140,23 @@ const dossierSchema = new Schema(
     ngayGiaHan: { type: Date, default: null },
     ngayTrinhLanhDao: { type: Date },
     ngayHetHan: { type: Date },
-    // Mốc thực tế
+    // Mốc thực tế. ngayTrinhThucTe = ngày của lần trình gần nhất (tự đồng bộ từ lanTrinh).
     ngayTrinhThucTe: { type: Date, default: null },
+    // Các lần trình Lãnh đạo (một hồ sơ có thể bị trả lại và trình nhiều lần), sắp theo ngày tăng dần.
+    lanTrinh: {
+      type: [
+        new Schema(
+          {
+            ngay: { type: Date, required: [true, 'Ngày trình là bắt buộc'] },
+            ketQua: { type: String, enum: { values: KET_QUA_TRINH, message: 'Kết quả trình không hợp lệ: {VALUE}' }, default: 'CHO_Y_KIEN' },
+            ghiChu: { type: String, trim: true, default: '', maxlength: [500, 'Ghi chú lần trình tối đa 500 ký tự'] },
+          },
+          { _id: false }
+        ),
+      ],
+      default: [],
+      validate: { validator: (list) => list.length <= LAN_TRINH_MAX, message: `Tối đa ${LAN_TRINH_MAX} lần trình` },
+    },
     ngayKetThuc: { type: Date, default: null },
     // Không bắt buộc: hồ sơ mới tiếp nhận có thể chưa phân công.
     canBoThuLy: {
@@ -193,6 +212,24 @@ dossierSchema.pre('validate', function clearRegisterLateFlag() {
   if (REGISTER_FLAG_INPUTS.some((field) => this.isModified(field))) this.treHanTheoSo = undefined;
 });
 
+/**
+ * Các lần trình → ngày trình thực tế + trạng thái (khi người dùng không tự đổi trạng thái):
+ * lần gần nhất bị trả lại → "Đang thụ lý" (cần trình lại); đang chờ ý kiến / đã duyệt → "Đã trình LĐ".
+ * Hồ sơ đã hoàn thành giữ nguyên trạng thái.
+ */
+dossierSchema.pre('validate', function syncSubmissions() {
+  if (!this.isModified('lanTrinh')) return;
+  this.lanTrinh.sort((a, b) => new Date(a.ngay) - new Date(b.ngay));
+  const last = this.lanTrinh[this.lanTrinh.length - 1];
+  this.ngayTrinhThucTe = last ? last.ngay : null;
+  if (this.isNew || this.isModified('trangThai') || this.trangThai === 'HOAN_THANH') return;
+  if (!last) {
+    if (this.trangThai === 'CHO_LANH_DAO_DUYET') this.trangThai = 'DANG_XU_LY';
+  } else {
+    this.trangThai = last.ketQua === 'TRA_LAI' ? 'DANG_XU_LY' : 'CHO_LANH_DAO_DUYET';
+  }
+});
+
 dossierSchema.pre('validate', function syncCompletionDate() {
   if (this.isNew || !this.isModified('trangThai') || this.isModified('ngayKetThuc')) return;
   if (this.trangThai === 'HOAN_THANH') {
@@ -229,6 +266,8 @@ module.exports = {
   PHAN_LOAI,
   PHAN_LOAI_RULES,
   MUC_DO_UU_TIEN,
+  KET_QUA_TRINH,
+  LAN_TRINH_MAX,
   PASSWORD_MIN_LENGTH,
   USERNAME_PATTERN,
   EMAIL_PATTERN,

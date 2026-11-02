@@ -68,6 +68,10 @@ Hạn xử lý của một hồ sơ = **Gia hạn** → **Ngày hẹn trả (bi�
 - **Tệp đính kèm** trong cửa sổ chi tiết: PDF, JPG/PNG, Word, Excel, tối đa 20 MB/tệp, 30 tệp/hồ sơ. Tệp lưu ngay trong
   MongoDB (GridFS, bucket `attachmentFiles`) — sao lưu database là có cả tệp. Cán bộ gỡ được tệp mình tải lên;
   Admin / Văn thư gỡ được mọi tệp. Xoá hồ sơ thì xoá luôn tệp.
+- **Các lần trình Lãnh đạo** (trong chi tiết hồ sơ): mỗi lần ghi ngày, kết quả (Chờ ý kiến / Trả lại bổ sung / Đã duyệt), ghi chú.
+  Lần gần nhất bị trả lại → hồ sơ về "Đang thụ lý" và hiện trong "Cần trình LĐ gấp"; chờ ý kiến / đã duyệt → "Đã trình LĐ".
+  Cán bộ ghi được lần trình của hồ sơ mình. Nhập Excel: ô Ngày trình ghi nhiều ngày (cách nhau dấu phẩy) = nhiều lần trình.
+  Hồ sơ có từ trước: `node scripts/backfill-lan-trinh.js <file sổ.xlsx> [--commit]` để lấy đủ các ngày trình từ sổ.
 - **Tra cứu nhanh** (ô cạnh nút Nhập hồ sơ): gõ đúng số biên nhận hoặc mã hồ sơ → mở ngay chi tiết.
 - **In phiếu theo dõi** (nút 🖨 ở cột Thao tác hoặc trong chi tiết): phiếu A4 gồm thông tin, quá trình xử lý, chỗ ký.
 - Danh sách **lọc, tìm kiếm, sắp xếp, phân trang ở server** — chỉ tải từng trang; "Chọn tất cả hồ sơ đang lọc" tối đa 3.000.

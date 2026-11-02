@@ -14,7 +14,7 @@ const LOG_ACTIONS = Object.freeze(['CREATE', 'UPDATE', 'DELETE', 'IMPORT', 'BULK
 const TRACKED_FIELDS = Object.freeze([
   'maHoSo', 'soBienNhan', 'tenHoSo', 'diaChi', 'donViGui', 'phanLoai',
   'ngayVao', 'ngayHenTra', 'ngayGiaHan', 'ngayTrinhLanhDao', 'ngayHetHan', 'ngayTrinhThucTe', 'ngayKetThuc',
-  'canBoThuLy', 'trangThai', 'ghiChuCanBo', 'ghiChu', 'chiDaoLanhDao', 'mucDoUuTien',
+  'canBoThuLy', 'trangThai', 'ghiChuCanBo', 'ghiChu', 'chiDaoLanhDao', 'mucDoUuTien', 'lanTrinh',
 ]);
 const DATE_FIELDS = new Set(['ngayVao', 'ngayHenTra', 'ngayGiaHan', 'ngayTrinhLanhDao', 'ngayHetHan', 'ngayTrinhThucTe', 'ngayKetThuc']);
 
@@ -37,6 +37,9 @@ dossierLogSchema.index({ dossier: 1, createdAt: -1 });
 
 const DossierLog = mongoose.models.DossierLog || mongoose.model('DossierLog', dossierLogSchema);
 
+const KET_QUA_TRINH_LABELS = { CHO_Y_KIEN: 'Chờ ý kiến', TRA_LAI: 'Trả lại', DA_DUYET: 'Đã duyệt' };
+const dmy = (value) => new Date(value).toISOString().slice(0, 10).split('-').reverse().join('/');
+
 const idOf = (value) => (value && typeof value === 'object' && value._id ? String(value._id) : value ? String(value) : null);
 
 /** Giá trị để so sánh / hiển thị: ngày → yyyy-mm-dd, cán bộ → id (đổi sang tên ở bước sau). */
@@ -44,6 +47,11 @@ function normalize(field, value) {
   if (value === undefined || value === null || value === '') return null;
   if (DATE_FIELDS.has(field)) return new Date(value).toISOString().slice(0, 10);
   if (field === 'canBoThuLy') return idOf(value);
+  // Các lần trình → một dòng dễ đọc: "05/03/2026 Trả lại; 12/03/2026 Đã duyệt".
+  if (field === 'lanTrinh') {
+    const text = value.map((l) => [dmy(l.ngay), KET_QUA_TRINH_LABELS[l.ketQua], l.ghiChu].filter(Boolean).join(' ')).join('; ');
+    return text || null;
+  }
   return value;
 }
 

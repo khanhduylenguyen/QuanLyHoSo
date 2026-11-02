@@ -15,7 +15,7 @@ export const ROLE_DESCRIPTIONS = {
   VAN_THU:
     'Tiếp nhận hồ sơ: nhập mới, sửa Ngày vào & Phân loại (hệ thống tự tính lại hạn), phân công cán bộ.',
   CAN_BO:
-    'Phân quyền dòng & cột: chỉ thấy hồ sơ được phân công, chỉ cập nhật Trạng thái & Ghi chú tiến độ. Cột nhạy cảm bị giới hạn.',
+    'Phân quyền dòng & cột: chỉ thấy hồ sơ được phân công, chỉ cập nhật Trạng thái, Ghi chú tiến độ & Các lần trình. Cột nhạy cảm bị giới hạn.',
 };
 
 export const TRANG_THAI_LABELS = {
@@ -23,6 +23,27 @@ export const TRANG_THAI_LABELS = {
   DANG_XU_LY: 'Đang thụ lý',
   CHO_LANH_DAO_DUYET: 'Đã trình LĐ',
   HOAN_THANH: 'Hoàn thành',
+};
+
+// Kết quả một lần trình Lãnh đạo ('' = sổ cũ không ghi kết quả).
+export const KET_QUA_TRINH_LABELS = {
+  CHO_Y_KIEN: 'Chờ ý kiến',
+  TRA_LAI: 'Trả lại bổ sung',
+  DA_DUYET: 'Đã duyệt',
+  '': 'Không rõ kết quả',
+};
+
+export const KET_QUA_TRINH_STYLES = {
+  CHO_Y_KIEN: 'bg-sky-50 text-sky-700 border-sky-200',
+  TRA_LAI: 'bg-orange-50 text-orange-700 border-orange-200',
+  DA_DUYET: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  '': 'bg-slate-50 text-slate-500 border-slate-200',
+};
+
+/** Các lần trình của hồ sơ; hồ sơ cũ chỉ có ngày trình thực tế thì coi là một lần trình. */
+export const submissionsOf = (record) => {
+  if (record?.lanTrinh?.length) return record.lanTrinh;
+  return record?.ngayTrinhThucTe ? [{ ngay: record.ngayTrinhThucTe, ketQua: '', ghiChu: '' }] : [];
 };
 
 export const TRANG_THAI_STYLES = {
@@ -144,10 +165,13 @@ export function getDeadlineStatus(record) {
   return { status: 'normal', daysLeft };
 }
 
-/** Trạng thái hạn trình lãnh đạo. */
+/** Trạng thái hạn trình lãnh đạo. 'returned' = lần trình gần nhất bị trả lại, cần trình lại. */
 export function getSubmitStatus(record) {
   const daysLeft = daysFromToday(record.ngayTrinhLanhDao);
-  if (isSubmitted(record)) return { status: 'submitted', daysLeft };
+  const submissions = submissionsOf(record);
+  const last = submissions[submissions.length - 1];
+  if (!isDone(record) && last?.ketQua === 'TRA_LAI') return { status: 'returned', daysLeft, count: submissions.length };
+  if (isSubmitted(record)) return { status: 'submitted', daysLeft, count: submissions.length };
   if (daysLeft === null) return { status: 'normal', daysLeft };
   if (daysLeft < 0) return { status: 'late', daysLeft };
   if (daysLeft === 0) return { status: 'today', daysLeft };
@@ -164,7 +188,7 @@ export const isDueNextWeek = (record) => {
 };
 
 export const isUrgentSubmit = (record) =>
-  ['late', 'today', 'urgent'].includes(getSubmitStatus(record).status);
+  ['late', 'today', 'urgent', 'returned'].includes(getSubmitStatus(record).status);
 
 /** Column-level RBAC phía UI: BE xoá hẳn key nếu user không có quyền xem. */
 export const isFieldHidden = (record, field) =>

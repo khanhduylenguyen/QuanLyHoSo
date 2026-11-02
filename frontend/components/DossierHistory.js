@@ -19,6 +19,7 @@ export const FIELD_LABELS = {
   ngayTrinhLanhDao: 'Hạn trình LĐ',
   ngayHetHan: 'Hạn xử lý',
   ngayTrinhThucTe: 'Ngày trình thực tế',
+  lanTrinh: 'Các lần trình LĐ',
   ngayKetThuc: 'Ngày kết thúc',
   canBoThuLy: 'Cán bộ thụ lý',
   trangThai: 'Trạng thái',
@@ -48,7 +49,8 @@ export function displayValue(field, value, typeLabels) {
   if (field === 'mucDoUuTien') return MUC_DO_UU_TIEN_LABELS[value] ?? value;
   if (field === 'phanLoai') return typeLabels[value] ?? value;
   const text = String(value);
-  return text.length > 80 ? `${text.slice(0, 80)}…` : text;
+  const max = field === 'lanTrinh' ? 300 : 80;
+  return text.length > max ? `${text.slice(0, max)}…` : text;
 }
 
 /** Dòng thời gian thao tác trên một hồ sơ (mới nhất trước). */

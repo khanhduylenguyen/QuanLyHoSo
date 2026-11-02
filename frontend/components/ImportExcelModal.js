@@ -19,6 +19,9 @@ import { api } from '@/lib/api';
 import { TRANG_THAI_LABELS, phanLoaiStyle } from '@/lib/dossier';
 import { saveBlob } from '@/lib/download';
 
+// Cùng ngưỡng với backend (UNDO_CONFIRM_MIN): lần nhập từ ngần này hồ sơ phải gõ lại số lượng khi hoàn tác.
+const UNDO_CONFIRM_MIN = 20;
+
 const formatDay = (value) => (value ? format(parseISO(value), 'dd/MM/yyyy') : '—');
 const formatSize = (bytes) => (bytes > 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.ceil(bytes / 1024)} KB`);
 
@@ -109,9 +112,20 @@ export default function ImportExcelModal({ open, onClose, onImported, pushToast 
 
   const handleUndo = (batch) => {
     const label = batch.fileName ? `"${batch.fileName}"` : 'này';
-    if (!window.confirm(`Hoàn tác lần nhập ${label}? Sẽ xoá ${batch.count} hồ sơ đã nhập từ file này.`)) return;
+    const warning = `Hoàn tác lần nhập ${label} sẽ XOÁ VĨNH VIỄN ${batch.count} hồ sơ đã nhập từ file này (kể cả mọi chỉnh sửa, lần trình, tệp đính kèm sau đó).`;
+    // Lần nhập lớn: phải gõ lại đúng số hồ sơ, tránh bấm nhầm xoá cả sổ.
+    if (batch.count >= UNDO_CONFIRM_MIN) {
+      const typed = window.prompt(`${warning}\n\nGõ số ${batch.count} để xác nhận:`);
+      if (typed === null) return;
+      if (Number(typed.trim()) !== batch.count) {
+        window.alert('Số không khớp — đã huỷ, không xoá gì.');
+        return;
+      }
+    } else if (!window.confirm(`${warning}\n\nTiếp tục?`)) {
+      return;
+    }
     run(async () => {
-      const { data } = await api.importUndo(batch.batchId);
+      const { data } = await api.importUndo(batch.batchId, batch.count);
       pushToast?.(`Đã hoàn tác: xoá ${data.deleted} hồ sơ`, 'info');
       if (step === 'done') setResult(null);
       loadBatches();
