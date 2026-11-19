@@ -89,6 +89,7 @@ const GCN_DATE_COLUMNS = [
 /** Bước quy trình từ cột "Tình trạng" của sổ GCN (thứ tự quan trọng: DỰ THẢO trước CẤP GCN…). */
 const STEP_RULES = [
   [/DA GIAI QUYET|HOAN THANH/, 'DA_GIAI_QUYET'],
+  [/TRINH LDP|LANH DAO PHONG/, 'TRINH_LDP'],
   [/\bRUT\b/, 'TRINH_RUT'],
   [/TRINH UB.*NIEM YET/, 'TRINH_NY'],
   [/DU THAO/, 'TRINH_DU_THAO'],

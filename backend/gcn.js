@@ -12,6 +12,8 @@ const { addDeadlineDays, ruleFor, quyTrinhConfig } = require('./settings');
 
 const BUOC = Object.freeze({
   DANG_THU_LY: 'Đang thụ lý',
+  // Trình Lãnh đạo phòng duyệt trước khi trình UB.
+  TRINH_LDP: 'Trình LĐP',
   TRINH_NY: 'Trình UB niêm yết',
   NIEM_YET: 'Đang niêm yết',
   CHO_HOP: 'Thụ lý chờ họp',
@@ -34,7 +36,7 @@ const BUOC_KE_TIEP = Object.freeze({
   TRINH_LAI: 'Trình lại UB',
 });
 
-const SUBMITTED_STEPS = new Set(['TRINH_NY', 'TRINH_DU_THAO', 'TRINH_CAP_GCN', 'TRINH_UB', 'TRINH_RUT']);
+const SUBMITTED_STEPS = new Set(['TRINH_LDP', 'TRINH_NY', 'TRINH_DU_THAO', 'TRINH_CAP_GCN', 'TRINH_UB', 'TRINH_RUT']);
 
 /** Trạng thái chung theo bước. */
 function statusForStep(buoc, hasOfficer) {

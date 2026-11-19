@@ -49,6 +49,7 @@ export const submissionsOf = (record) => {
 // Bước quy trình GCN (cột "Tình trạng" của sổ) — cùng danh sách với backend/gcn.js (API /meta trả nhãn).
 export const BUOC_LABELS = {
   DANG_THU_LY: 'Đang thụ lý',
+  TRINH_LDP: 'Trình LĐP',
   TRINH_NY: 'Trình UB niêm yết',
   NIEM_YET: 'Đang niêm yết',
   CHO_HOP: 'Thụ lý chờ họp',
@@ -63,6 +64,7 @@ export const BUOC_LABELS = {
 
 export const BUOC_STYLES = {
   DANG_THU_LY: 'bg-sky-50 text-sky-700 border-sky-200',
+  TRINH_LDP: 'bg-indigo-50 text-indigo-700 border-indigo-200',
   TRINH_NY: 'bg-violet-50 text-violet-700 border-violet-200',
   NIEM_YET: 'bg-amber-50 text-amber-800 border-amber-200',
   CHO_HOP: 'bg-slate-100 text-slate-700 border-slate-300',
