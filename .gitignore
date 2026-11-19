@@ -5,3 +5,4 @@ node_modules/
 backend/uploads/
 backend/import-reports/
 backend/backups/
+.claude/
