@@ -34,10 +34,10 @@ export default function QuickLookup({ onFound, pushToast }) {
     if (!keyword) return;
     setBusy(true);
     try {
-      const { data } = await api.lookupDossier(keyword);
-      if (data.length === 0) pushToast(`Không tìm thấy hồ sơ có số biên nhận / mã "${keyword}"`, 'error');
+      const { data, meta } = await api.lookupDossier(keyword);
+      if (data.length === 0) pushToast(`Không tìm thấy hồ sơ có số biên nhận / mã "${keyword}" (hoặc kết thúc bằng "${keyword}")`, 'error');
       else if (data.length === 1) pick(data[0]);
-      else setMatches(data);
+      else setMatches({ items: data, total: meta?.total ?? data.length, match: meta?.match });
     } catch (error) {
       pushToast(`Không tra cứu được: ${error.message}`, 'error');
     } finally {
@@ -53,8 +53,9 @@ export default function QuickLookup({ onFound, pushToast }) {
           <input
             value={value}
             onChange={(event) => setValue(event.target.value)}
-            placeholder="Số biên nhận / mã HS…"
-            aria-label="Số biên nhận hoặc mã hồ sơ"
+            placeholder="Số biên nhận / mấy số cuối…"
+            title="Gõ nguyên số biên nhận, hoặc chỉ mấy số cuối (ít nhất 3 số)"
+            aria-label="Số biên nhận, mã hồ sơ hoặc mấy số cuối"
             className="w-48 rounded-lg border border-slate-300 py-2 pl-8 pr-2 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 sm:text-sm"
           />
         </div>
@@ -70,15 +71,22 @@ export default function QuickLookup({ onFound, pushToast }) {
 
       {matches && (
         <ul className="absolute right-0 z-40 mt-1 w-80 overflow-hidden rounded-lg border border-slate-200 bg-white text-xs shadow-xl">
-          <li className="bg-slate-50 px-3 py-1.5 font-semibold text-slate-500">{matches.length} hồ sơ trùng số — chọn một:</li>
-          {matches.map((record) => (
+          <li className="bg-slate-50 px-3 py-1.5 font-semibold text-slate-500">
+            {matches.match === 'suffix' ? `${matches.total} hồ sơ có số kết thúc bằng "${value.trim()}"` : `${matches.total} hồ sơ trùng số`} — chọn một:
+          </li>
+          {matches.items.map((record) => (
             <li key={record._id}>
               <button type="button" onClick={() => pick(record)} className="block w-full px-3 py-2 text-left hover:bg-indigo-50">
-                <span className="font-semibold text-indigo-700">{record.maHoSo}</span> · {record.tenHoSo}
-                <span className="block text-slate-500">Ngày vào {formatDate(record.ngayVao)}</span>
+                <span className="font-semibold text-indigo-700">{record.soBienNhan || record.maHoSo}</span> · {record.tenHoSo}
+                <span className="block text-slate-500">Ngày nhận {formatDate(record.ngayVao)}</span>
               </button>
             </li>
           ))}
+          {matches.total > matches.items.length && (
+            <li className="bg-amber-50 px-3 py-1.5 text-amber-800">
+              Chỉ hiện {matches.items.length} hồ sơ mới nhất — gõ thêm số để thu hẹp.
+            </li>
+          )}
         </ul>
       )}
     </div>

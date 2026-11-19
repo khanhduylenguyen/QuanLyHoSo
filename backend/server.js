@@ -603,20 +603,32 @@ const parsePositiveInt = (value, fallback) => {
   return Number.isInteger(number) && number > 0 ? number : fallback;
 };
 
-// Tra cứu nhanh theo số biên nhận / mã hồ sơ (khớp đúng, không phân biệt hoa thường).
+// Tra cứu nhanh theo số biên nhận / mã hồ sơ (không phân biệt hoa thường): khớp đúng trước;
+// không có thì tìm số biên nhận / mã KẾT THÚC bằng chuỗi gõ vào (gõ mấy số cuối, ít nhất 3 ký tự).
 const LOOKUP_LIMIT = 10;
+const LOOKUP_SUFFIX_MIN = 3;
 api.get(
   '/dossiers/lookup',
   asyncHandler(async (req, res) => {
     const keyword = queryText(req.query.q).slice(0, SEARCH_MAX_LENGTH);
     if (!keyword) throw new HttpError(400, 'Nhập số biên nhận hoặc mã hồ sơ');
-    const exact = new RegExp(`^${escapeRegex(keyword)}$`, 'i');
-    const records = await Dossier.find({ ...buildRowScope(req.auth), $or: [{ soBienNhan: exact }, { maHoSo: exact }] })
-      .populate('canBoThuLy', ASSIGNEE_FIELDS)
-      .sort({ ngayVao: -1 })
-      .limit(LOOKUP_LIMIT)
-      .lean();
-    sendDossiers(res, records, req.auth);
+    const find = async (regex) => {
+      const filter = { ...buildRowScope(req.auth), $or: [{ soBienNhan: regex }, { maHoSo: regex }] };
+      const [records, total] = await Promise.all([
+        Dossier.find(filter).populate('canBoThuLy', ASSIGNEE_FIELDS).sort({ ngayVao: -1 }).limit(LOOKUP_LIMIT).lean(),
+        Dossier.countDocuments(filter),
+      ]);
+      return { records, total };
+    };
+
+    let match = 'exact';
+    let { records, total } = await find(new RegExp(`^${escapeRegex(keyword)}$`, 'i'));
+    if (total === 0) {
+      if (keyword.length < LOOKUP_SUFFIX_MIN) throw new HttpError(400, `Gõ ít nhất ${LOOKUP_SUFFIX_MIN} số cuối của số biên nhận`);
+      match = 'suffix';
+      ({ records, total } = await find(new RegExp(`${escapeRegex(keyword)}$`, 'i')));
+    }
+    sendDossiers(res, records, req.auth, { total, match, limit: LOOKUP_LIMIT });
   })
 );
 
