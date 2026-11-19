@@ -59,6 +59,7 @@ const GCN_COLUMNS = {
   congNhanThem: [[null, /^CONG NHAN THEM DAT$/]],
   capGcnX: [[null, /^CAP GCN$/]],
   to: [[null, /^TO$/]],
+  ngayTrinhLDP: [[null, /^NGAY TRINH LDP/]],
   hanTrinhNY: [[null, /^HAN TRINH NY/]],
   ngayTrinhNY: [[null, /^NGAY TRINH NY/]],
   ngayBatDauNY: [[null, /^NGAY BAT DAU NY/]],
@@ -81,7 +82,7 @@ const GCN_COLUMNS = {
   hanTrinhLaiUB: [[null, /^HAN TRINH LAI UB$/]],
 };
 const GCN_DATE_COLUMNS = [
-  'hanTrinhNY', 'ngayTrinhNY', 'ngayBatDauNY', 'ngayKetThucNY', 'hanTrinhDuThao', 'ngayTrinhDuThao',
+  'ngayTrinhLDP', 'hanTrinhNY', 'ngayTrinhNY', 'ngayBatDauNY', 'ngayKetThucNY', 'hanTrinhDuThao', 'ngayTrinhDuThao',
   'hanTrinhPCThue', 'ngayTrinhPCThue', 'ngayDiThue', 'ngayNhanKQNVTC', 'hanTrinhGCN', 'ngayTrinhGCN',
   'ngayTrinhRut', 'ngayVBRut', 'ngayTraTo', 'hanTrinhLaiUB',
 ];
@@ -167,6 +168,7 @@ const TEMPLATE_COLUMNS = [
   { header: 'Ngày hẹn trả (theo BN)', width: 14, date: true },
   { header: 'Gia hạn (nếu có)', width: 14, date: true },
   { header: 'Kết thúc Quy trình (ĐÁNH X)', width: 12 },
+  { header: 'Ngày trình LĐP', width: 14, date: true },
   { header: 'Hạn trình NY lên UB', width: 14, date: true },
   { header: 'Ngày trình NY VPUB', width: 14, date: true },
   { header: 'Ngày bắt đầu NY', width: 14, date: true },

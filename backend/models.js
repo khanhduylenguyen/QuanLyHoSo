@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 const { PHAN_LOAI_RULES, PHAN_LOAI } = require('./catalog');
 const { todayVN } = require('./settings');
-const { BUOC_CODES, BUOC_KE_TIEP, statusForStep, applyWorkflow } = require('./gcn');
+const { BUOC_CODES, BUOC_KE_TIEP, SUBMISSION_DATE_FIELD, statusForStep, applyWorkflow } = require('./gcn');
 
 const { Schema } = mongoose;
 
@@ -27,6 +27,7 @@ const LAN_TRINH_MAX = 20;
 // Ngày từng bước quy trình GCN (cột của sheet "DANH SÁCH GCN 2026"). han* có thể tự tính theo cấu hình (gcn.js).
 const QUY_TRINH_DATE_FIELDS = Object.freeze([
   'ngayChuyen',
+  'ngayTrinhLDP',
   'hanTrinhNY', 'ngayTrinhNY', 'ngayBatDauNY', 'ngayKetThucNY',
   'hanTrinhDuThao', 'ngayTrinhDuThao',
   'hanTrinhPCThue', 'ngayTrinhPCThue', 'ngayDiThue',
@@ -250,6 +251,9 @@ dossierSchema.pre('validate', function syncStep() {
     else this.trangThai = statusForStep(this.buoc, hasOfficer);
   } else if (this.isModified('buoc')) {
     this.trangThai = statusForStep(this.buoc, hasOfficer);
+    // Chọn bước "Trình …" mà chưa ghi ngày trình → lấy hôm nay (để tính hạn trả về).
+    const dateField = SUBMISSION_DATE_FIELD[this.buoc];
+    if (dateField && !this[dateField] && !this.isModified(dateField)) this[dateField] = todayVN();
   } else if (this.isModified('trangThai')) {
     if (this.trangThai === 'HOAN_THANH') this.buoc = 'DA_GIAI_QUYET';
     else if (this.buoc === 'DA_GIAI_QUYET') this.buoc = 'DANG_THU_LY';

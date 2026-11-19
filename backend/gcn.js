@@ -5,6 +5,7 @@
  *
  * - BUOC: bước hiện tại (cột "Tình trạng" của sheet). trangThai chung của hồ sơ suy ra từ bước.
  * - applyWorkflow(): tính các hạn theo cấu hình (settings.quyTrinh) và "bước kế tiếp" + hạn của nó.
+ *   Hồ sơ đang ở bước "Trình …" chờ cấp trên trả về: hạn = ngày trình + quyTrinh.traVe (mặc định 3 ngày làm việc).
  *   Hạn bước kế tiếp lưu vào ngayTrinhLanhDao để cảnh báo / lọc "cần trình gấp" / nhắc email dùng chung.
  */
 const { addDays } = require('date-fns');
@@ -27,8 +28,9 @@ const BUOC = Object.freeze({
 });
 const BUOC_CODES = Object.freeze(Object.keys(BUOC));
 
-// Bước kế tiếp cần trình (hạn của bước này = ngayTrinhLanhDao).
+// Bước kế tiếp cần làm (hạn của bước này = ngayTrinhLanhDao).
 const BUOC_KE_TIEP = Object.freeze({
+  TRA_VE: 'Chờ trả về',
   NY: 'Trình niêm yết',
   DU_THAO: 'Trình dự thảo GCN',
   PC_THUE: 'Trình phiếu chuyển thuế',
@@ -37,6 +39,26 @@ const BUOC_KE_TIEP = Object.freeze({
 });
 
 const SUBMITTED_STEPS = new Set(['TRINH_LDP', 'TRINH_NY', 'TRINH_DU_THAO', 'TRINH_CAP_GCN', 'TRINH_UB', 'TRINH_RUT']);
+
+// Ngày trình của từng bước "Trình …" (TRINH_UB chung: lấy ngày trình gần nhất trong các bước).
+const SUBMISSION_DATE_FIELD = Object.freeze({
+  TRINH_LDP: 'ngayTrinhLDP',
+  TRINH_NY: 'ngayTrinhNY',
+  TRINH_DU_THAO: 'ngayTrinhDuThao',
+  TRINH_CAP_GCN: 'ngayTrinhGCN',
+  TRINH_RUT: 'ngayTrinhRut',
+});
+const ALL_SUBMISSION_FIELDS = [...Object.values(SUBMISSION_DATE_FIELD), 'ngayTrinhPCThue'];
+
+/** Ngày trình của bước đang chờ trả về (null nếu chưa ghi). */
+function submittedOn(d) {
+  if (d.buoc === 'TRINH_UB') {
+    const dates = ALL_SUBMISSION_FIELDS.map((field) => d[field]).filter(Boolean).map((v) => new Date(v));
+    return dates.length ? new Date(Math.max(...dates)) : null;
+  }
+  const field = SUBMISSION_DATE_FIELD[d.buoc];
+  return field ? d[field] ?? null : null;
+}
 
 /** Trạng thái chung theo bước. */
 function statusForStep(buoc, hasOfficer) {
@@ -69,9 +91,15 @@ function dueDate(d, q) {
   return rule?.niemYet ? plusCalendar(base, q.henTraCongNY) : base;
 }
 
-/** Bước kế tiếp cần trình và hạn của nó ({ buoc: null } = không chờ trình gì / đã xong). */
-function nextStep(d) {
-  if (d.trangThai === 'HOAN_THANH' || d.buoc === 'DA_GIAI_QUYET' || d.ngayTrinhRut) return { buoc: null, han: null };
+/** Bước kế tiếp cần làm và hạn của nó ({ buoc: null } = không chờ gì / đã xong). */
+function nextStep(d, q = quyTrinhConfig()) {
+  if (d.trangThai === 'HOAN_THANH' || d.buoc === 'DA_GIAI_QUYET') return { buoc: null, han: null };
+  // Đã trình (LĐP, UB…): chờ trả về trong N ngày kể từ ngày trình.
+  if (SUBMITTED_STEPS.has(d.buoc)) {
+    const on = submittedOn(d);
+    return { buoc: 'TRA_VE', han: on ? plusWorking(on, q.traVe) : null };
+  }
+  if (d.ngayTrinhRut) return { buoc: null, han: null };
   if (d.buoc === 'TRA_GIAI_TRINH' && d.hanTrinhLaiUB) return { buoc: 'TRINH_LAI', han: d.hanTrinhLaiUB };
   const needsNY = ruleFor(d.phanLoai)?.niemYet !== false;
   if (needsNY && !d.ngayTrinhNY && !d.ngayBatDauNY) return { buoc: 'NY', han: d.hanTrinhNY ?? null };
@@ -100,13 +128,14 @@ function applyWorkflow(d, { changed = () => true, explicit = () => false, force 
     d[field] = compute(d, q);
   }
   d.ngayHetHan = dueDate(d, q);
-  const next = nextStep(d);
+  const next = nextStep(d, q);
   d.buocKeTiep = next.buoc;
   d.ngayTrinhLanhDao = next.han;
   return d;
 }
 
 module.exports = {
+  SUBMISSION_DATE_FIELD,
   BUOC,
   BUOC_CODES,
   BUOC_KE_TIEP,

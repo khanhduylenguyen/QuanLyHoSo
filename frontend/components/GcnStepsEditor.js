@@ -6,6 +6,10 @@ import { ListChecks } from 'lucide-react';
 // khi đã cấu hình, ô hạn để trống sẽ được hệ thống tự tính lúc lưu.
 export const GCN_STEP_GROUPS = [
   {
+    title: 'Trình Lãnh đạo phòng',
+    fields: [{ key: 'ngayTrinhLDP', label: 'Ngày trình LĐP' }],
+  },
+  {
     title: 'Niêm yết (15 ngày liên tục)',
     fields: [
       { key: 'hanTrinhNY', label: 'Hạn trình NY lên UB', auto: 'trinhNY' },

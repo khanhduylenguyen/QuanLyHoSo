@@ -79,6 +79,7 @@ export const BUOC_STYLES = {
 
 // Bước kế tiếp cần trình (hạn của nó = ngayTrinhLanhDao).
 export const BUOC_KE_TIEP_LABELS = {
+  TRA_VE: 'Chờ trả về',
   NY: 'Trình niêm yết',
   DU_THAO: 'Trình dự thảo GCN',
   PC_THUE: 'Trình phiếu chuyển thuế',

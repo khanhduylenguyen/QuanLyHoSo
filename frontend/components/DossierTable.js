@@ -93,14 +93,16 @@ function SubmitPill({ record }) {
       </span>
     );
   }
+  // Chờ trả về sau khi trình: hạn là của cấp trên trả hồ sơ, không phải của cán bộ trình.
+  const verb = step === 'TRA_VE' ? 'trả về' : 'trình';
   if (status === 'late') {
-    return <span className={`${pill} border border-rose-300 bg-rose-100 font-bold text-rose-700`}>Trễ trình {-daysLeft} ngày!</span>;
+    return <span className={`${pill} border border-rose-300 bg-rose-100 font-bold text-rose-700`}>Trễ {verb} {-daysLeft} ngày!</span>;
   }
   if (status === 'today') {
-    return <span className={`${pill} border border-amber-300 bg-amber-100 font-bold text-amber-800`}>Phải trình hôm nay</span>;
+    return <span className={`${pill} border border-amber-300 bg-amber-100 font-bold text-amber-800`}>Phải {verb} hôm nay</span>;
   }
   if (status === 'urgent') {
-    return <span className={`${pill} border border-blue-200 bg-blue-100 font-semibold text-blue-800`}>Còn {daysLeft} ngày trình</span>;
+    return <span className={`${pill} border border-blue-200 bg-blue-100 font-semibold text-blue-800`}>Còn {daysLeft} ngày {verb}</span>;
   }
   return <span className={`${pill} bg-slate-100 font-medium text-slate-600`}>Còn {daysLeft ?? '?'} ngày</span>;
 }

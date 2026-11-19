@@ -28,7 +28,7 @@ const MAX_RULE_DAYS = 365;
 const MAX_HOLIDAYS = 500;
 
 // Số ngày từng bước quy trình GCN. null = chưa quy định → bước đó chỉ ghi ngày, không tự tính hạn.
-// trinhNY / duThao / pcThue / trinhGCN tính theo lịch làm việc (useWorkingDays); niemYet, henTraCongNY là ngày lịch.
+// trinhNY / duThao / pcThue / trinhGCN / traVe tính theo lịch làm việc (useWorkingDays); niemYet, henTraCongNY là ngày lịch.
 const QUY_TRINH_KEYS = Object.freeze({
   trinhNY: { label: 'Hạn trình niêm yết (từ ngày nhận)', required: true },
   niemYet: { label: 'Thời gian niêm yết (ngày lịch)', required: true },
@@ -36,6 +36,7 @@ const QUY_TRINH_KEYS = Object.freeze({
   duThao: { label: 'Hạn trình dự thảo cấp GCN (từ ngày kết thúc niêm yết)' },
   pcThue: { label: 'Hạn trình phiếu chuyển thuế (từ ngày trình dự thảo)' },
   trinhGCN: { label: 'Hạn trình cấp GCN (từ ngày nhận kết quả NVTC)' },
+  traVe: { label: 'Hạn trả về sau khi trình (từ ngày trình LĐP / UB)', required: true },
 });
 
 // Ngày lễ cố định theo dương lịch. Tết Nguyên đán, Giỗ Tổ (âm lịch) và ngày nghỉ bù thay đổi
@@ -49,7 +50,7 @@ const DEFAULTS = {
     holidays: DEFAULT_HOLIDAYS,
     rules: Object.fromEntries(Object.entries(PHAN_LOAI_RULES).map(([code, rule]) => [code, { hetHan: rule.hetHan }])),
     // Theo công thức trong sheet GCN: hạn trình NY = WORKDAY(Ngày nhận, 8); niêm yết 15 ngày; hạn trả + 15.
-    quyTrinh: { trinhNY: 8, niemYet: 15, henTraCongNY: 15, duThao: null, pcThue: null, trinhGCN: null },
+    quyTrinh: { trinhNY: 8, niemYet: 15, henTraCongNY: 15, duThao: null, pcThue: null, trinhGCN: null, traVe: 3 },
   },
   reminders: {
     enabled: false,

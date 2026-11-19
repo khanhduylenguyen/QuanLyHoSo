@@ -35,6 +35,7 @@ export const FIELD_LABELS = {
   ghiChuUuTien: 'Ghi chú ưu tiên',
   congNhanThemDat: 'Công nhận thêm đất',
   capGCN: 'Cấp GCN',
+  ngayTrinhLDP: 'Ngày trình LĐP',
   hanTrinhNY: 'Hạn trình NY',
   ngayTrinhNY: 'Ngày trình NY',
   ngayBatDauNY: 'Bắt đầu NY',

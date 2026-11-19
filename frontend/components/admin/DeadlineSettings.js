@@ -20,7 +20,7 @@ const numberInput =
   'w-20 rounded-lg border border-slate-300 px-2 py-1.5 text-center font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500';
 
 // Thứ tự hiển thị các bước quy trình GCN (nhãn lấy từ API: quyTrinhKeys).
-const QUY_TRINH_ORDER = ['trinhNY', 'niemYet', 'henTraCongNY', 'duThao', 'pcThue', 'trinhGCN'];
+const QUY_TRINH_ORDER = ['traVe', 'trinhNY', 'niemYet', 'henTraCongNY', 'duThao', 'pcThue', 'trinhGCN'];
 
 /** Trang cấu hình thời hạn: số ngày từng bước quy trình GCN, hạn trả theo loại, ngày làm việc / ngày lịch, ngày lễ. */
 export default function DeadlineSettings({ pushToast }) {

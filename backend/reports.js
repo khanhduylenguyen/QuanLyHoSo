@@ -202,6 +202,7 @@ async function buildDossierWorkbook(dossiers, { includeSensitive }) {
     { header: 'Tình trạng (bước)', key: 'buoc', width: 20 },
     { header: 'Bước kế tiếp', key: 'buocKeTiep', width: 20 },
     { header: 'Hạn bước kế tiếp', key: 'ngayTrinhLanhDao', width: 12, date: true },
+    { header: 'Ngày trình LĐP', key: 'ngayTrinhLDP', width: 12, date: true },
     { header: 'Hạn trình NY lên UB', key: 'hanTrinhNY', width: 12, date: true },
     { header: 'Ngày trình NY VPUB', key: 'ngayTrinhNY', width: 12, date: true },
     { header: 'Ngày bắt đầu NY', key: 'ngayBatDauNY', width: 12, date: true },
