@@ -5,7 +5,7 @@ const inter = Inter({ subsets: ['latin', 'vietnamese'], variable: '--font-inter'
 
 export const metadata = {
   title: 'Quản lý Hồ sơ',
-  description: 'Hệ thống Quản lý, Phân công & Theo dõi Hạn Hồ sơ',
+  description: 'Quản lý & theo dõi hồ sơ Cấp Giấy chứng nhận theo từng bước',
 };
 
 export default function RootLayout({ children }) {

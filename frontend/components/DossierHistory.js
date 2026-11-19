@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { format, parseISO } from 'date-fns';
 import { ArrowRightLeft, CalendarPlus, FilePlus2, FileSpreadsheet, History, Layers, LoaderCircle, Paperclip, PenLine, Trash2 } from 'lucide-react';
 import { api } from '@/lib/api';
-import { MUC_DO_UU_TIEN_LABELS, TRANG_THAI_LABELS } from '@/lib/dossier';
+import { BUOC_LABELS, MUC_DO_UU_TIEN_LABELS, TRANG_THAI_LABELS } from '@/lib/dossier';
 
 export const FIELD_LABELS = {
   maHoSo: 'Mã hồ sơ',
@@ -12,12 +12,13 @@ export const FIELD_LABELS = {
   tenHoSo: 'Tên hồ sơ',
   diaChi: 'Địa chỉ',
   donViGui: 'Đơn vị gửi',
-  phanLoai: 'Loại thủ tục',
-  ngayVao: 'Ngày vào',
+  phanLoai: 'Loại hồ sơ',
+  ngayVao: 'Ngày nhận',
+  ngayChuyen: 'Ngày chuyển',
   ngayHenTra: 'Ngày hẹn trả',
   ngayGiaHan: 'Gia hạn',
-  ngayTrinhLanhDao: 'Hạn trình LĐ',
-  ngayHetHan: 'Hạn xử lý',
+  ngayTrinhLanhDao: 'Hạn bước tiếp',
+  ngayHetHan: 'Hạn trả',
   ngayTrinhThucTe: 'Ngày trình thực tế',
   lanTrinh: 'Các lần trình LĐ',
   ngayKetThuc: 'Ngày kết thúc',
@@ -27,6 +28,29 @@ export const FIELD_LABELS = {
   ghiChu: 'Ghi chú',
   chiDaoLanhDao: 'Chỉ đạo LĐ',
   mucDoUuTien: 'Ưu tiên nội bộ',
+  buoc: 'Tình trạng',
+  to: 'Tổ',
+  soGCN: 'Số GCN',
+  giaiTrinh: 'Giải trình',
+  ghiChuUuTien: 'Ghi chú ưu tiên',
+  congNhanThemDat: 'Công nhận thêm đất',
+  capGCN: 'Cấp GCN',
+  hanTrinhNY: 'Hạn trình NY',
+  ngayTrinhNY: 'Ngày trình NY',
+  ngayBatDauNY: 'Bắt đầu NY',
+  ngayKetThucNY: 'Kết thúc NY',
+  hanTrinhDuThao: 'Hạn trình dự thảo',
+  ngayTrinhDuThao: 'Ngày trình dự thảo',
+  hanTrinhPCThue: 'Hạn trình PC thuế',
+  ngayTrinhPCThue: 'Ngày trình PC thuế',
+  ngayDiThue: 'Ngày đi thuế',
+  ngayNhanKQNVTC: 'Nhận KQ NVTC',
+  hanTrinhGCN: 'Hạn trình GCN',
+  ngayTrinhGCN: 'Ngày trình UB cấp GCN',
+  ngayTrinhRut: 'Ngày trình UB rút',
+  ngayVBRut: 'Ngày VB rút',
+  ngayTraTo: 'Ngày trả tổ',
+  hanTrinhLaiUB: 'Hạn trình lại UB',
 };
 
 export const ACTIONS = {
@@ -46,6 +70,8 @@ export function displayValue(field, value, typeLabels) {
   if (value === null || value === undefined || value === '') return '(trống)';
   if (/^\d{4}-\d{2}-\d{2}$/.test(String(value))) return format(parseISO(value), 'dd/MM/yyyy');
   if (field === 'trangThai') return TRANG_THAI_LABELS[value] ?? value;
+  if (field === 'buoc') return BUOC_LABELS[value] ?? value;
+  if (typeof value === 'boolean') return value ? 'Có' : 'Không';
   if (field === 'mucDoUuTien') return MUC_DO_UU_TIEN_LABELS[value] ?? value;
   if (field === 'phanLoai') return typeLabels[value] ?? value;
   const text = String(value);

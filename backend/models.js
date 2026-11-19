@@ -1,7 +1,8 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 const { PHAN_LOAI_RULES, PHAN_LOAI } = require('./catalog');
-const { addDeadlineDays, ruleFor, todayVN } = require('./settings');
+const { todayVN } = require('./settings');
+const { BUOC_CODES, BUOC_KE_TIEP, statusForStep, applyWorkflow } = require('./gcn');
 
 const { Schema } = mongoose;
 
@@ -23,23 +24,16 @@ const MUC_DO_UU_TIEN = Object.freeze(['THAP', 'TRUNG_BINH', 'CAO', 'KHAN_CAP']);
 const KET_QUA_TRINH = Object.freeze(['CHO_Y_KIEN', 'TRA_LAI', 'DA_DUYET', '']);
 const LAN_TRINH_MAX = 20;
 
-/**
- * Tính ngayTrinhLanhDao và ngayHetHan từ ngayVao + phanLoai theo cấu hình đang áp dụng
- * (thời hạn từng loại, ngày làm việc / ngày lịch, ngày lễ — xem settings.js, catalog.js).
- * Hồ sơ có "Ngày hẹn trả" / "Gia hạn" riêng thì hook bên dưới dùng ngày đó thay cho hạn xử lý.
- * Trả về null nếu thiếu dữ liệu hoặc phân loại không hợp lệ.
- */
-function calculateDeadlines(ngayVao, phanLoai) {
-  const rule = ruleFor(phanLoai);
-  const start = ngayVao instanceof Date ? ngayVao : new Date(ngayVao);
-
-  if (!rule || Number.isNaN(start.getTime())) return null;
-
-  return {
-    ngayTrinhLanhDao: addDeadlineDays(start, rule.trinh),
-    ngayHetHan: addDeadlineDays(start, rule.hetHan),
-  };
-}
+// Ngày từng bước quy trình GCN (cột của sheet "DANH SÁCH GCN 2026"). han* có thể tự tính theo cấu hình (gcn.js).
+const QUY_TRINH_DATE_FIELDS = Object.freeze([
+  'ngayChuyen',
+  'hanTrinhNY', 'ngayTrinhNY', 'ngayBatDauNY', 'ngayKetThucNY',
+  'hanTrinhDuThao', 'ngayTrinhDuThao',
+  'hanTrinhPCThue', 'ngayTrinhPCThue', 'ngayDiThue',
+  'ngayNhanKQNVTC', 'hanTrinhGCN', 'ngayTrinhGCN',
+  'ngayTrinhRut', 'ngayVBRut',
+  'ngayTraTo', 'hanTrinhLaiUB',
+]);
 
 const userSchema = new Schema(
   {
@@ -158,6 +152,22 @@ const dossierSchema = new Schema(
       validate: { validator: (list) => list.length <= LAN_TRINH_MAX, message: `Tối đa ${LAN_TRINH_MAX} lần trình` },
     },
     ngayKetThuc: { type: Date, default: null },
+
+    // --- Quy trình GCN ---
+    ...Object.fromEntries(QUY_TRINH_DATE_FIELDS.map((field) => [field, { type: Date, default: null }])),
+    // Bước hiện tại (cột "Tình trạng"); trangThai chung tự suy ra từ bước.
+    buoc: { type: String, enum: { values: BUOC_CODES, message: 'Bước không hợp lệ: {VALUE}' }, default: 'DANG_THU_LY' },
+    // Bước kế tiếp cần trình (tự tính) — hạn của nó lưu ở ngayTrinhLanhDao.
+    buocKeTiep: { type: String, enum: [...Object.keys(BUOC_KE_TIEP), null], default: null },
+    // Tổ chuyên môn (TN-MT, XD-CT…), số GCN đã cấp, nội dung giải trình khi bị trả.
+    to: { type: String, trim: true, default: '' },
+    soGCN: { type: String, trim: true, default: '' },
+    giaiTrinh: { type: String, trim: true, default: '' },
+    // Ghi chú ưu tiên để Lãnh đạo xem (cột "GHI CHÚ (ƯU TIÊN)").
+    ghiChuUuTien: { type: String, trim: true, default: '' },
+    congNhanThemDat: { type: Boolean, default: false },
+    capGCN: { type: Boolean, default: false },
+
     // Không bắt buộc: hồ sơ mới tiếp nhận có thể chưa phân công.
     canBoThuLy: {
       type: Schema.Types.ObjectId,
@@ -198,9 +208,8 @@ dossierSchema.index({ canBoThuLy: 1, ngayHetHan: 1 });
 dossierSchema.index({ ngayHetHan: 1 });
 
 dossierSchema.index({ soBienNhan: 1 });
+dossierSchema.index({ buoc: 1 });
 dossierSchema.index({ 'nguonNhap.lanNhap': 1 }, { sparse: true });
-
-const DEADLINE_INPUTS = ['ngayVao', 'phanLoai', 'ngayHenTra', 'ngayGiaHan'];
 
 // Ngày kết thúc đi theo trạng thái khi cập nhật: chuyển sang Hoàn thành mà chưa có ngày → hôm nay;
 // mở lại hồ sơ → xoá ngày kết thúc (trừ khi người dùng tự nhập). Bỏ qua bản ghi mới để không
@@ -230,6 +239,25 @@ dossierSchema.pre('validate', function syncSubmissions() {
   }
 });
 
+/**
+ * Bước ↔ trạng thái chung: đổi bước → trạng thái theo bước; đổi trạng thái (nút Hoàn thành, mở lại,
+ * thao tác hàng loạt) → bước "Đã giải quyết" / quay về "Đang thụ lý".
+ */
+dossierSchema.pre('validate', function syncStep() {
+  const hasOfficer = Boolean(this.canBoThuLy);
+  if (this.isNew) {
+    if (this.trangThai === 'HOAN_THANH' && this.buoc === 'DANG_THU_LY') this.buoc = 'DA_GIAI_QUYET';
+    else this.trangThai = statusForStep(this.buoc, hasOfficer);
+  } else if (this.isModified('buoc')) {
+    this.trangThai = statusForStep(this.buoc, hasOfficer);
+  } else if (this.isModified('trangThai')) {
+    if (this.trangThai === 'HOAN_THANH') this.buoc = 'DA_GIAI_QUYET';
+    else if (this.buoc === 'DA_GIAI_QUYET') this.buoc = 'DANG_THU_LY';
+  } else if (this.isModified('canBoThuLy') && this.buoc === 'DANG_THU_LY') {
+    this.trangThai = statusForStep(this.buoc, hasOfficer);
+  }
+});
+
 dossierSchema.pre('validate', function syncCompletionDate() {
   if (this.isNew || !this.isModified('trangThai') || this.isModified('ngayKetThuc')) return;
   if (this.trangThai === 'HOAN_THANH') {
@@ -239,20 +267,13 @@ dossierSchema.pre('validate', function syncCompletionDate() {
   }
 });
 
-// Auto-Date: chạy trước validate (tức trước mọi .save()), chỉ tính lại khi một
-// trong các trường đầu vào thay đổi để không ghi đè vô ích.
-// Hạn xử lý = Gia hạn → Ngày hẹn trả (biên nhận) → Ngày vào + hạn mặc định theo loại.
-// Hook đồng bộ (không dùng next) để tương thích cả Mongoose 8 và 9.
+// Hạn tự động (gcn.js): hạn các bước theo cấu hình, hạn trả, bước kế tiếp + hạn (ngayTrinhLanhDao).
+// Ngày người dùng tự nhập / có trong file được giữ nguyên. Hook đồng bộ (không dùng next).
 dossierSchema.pre('validate', function autoCalculateDates() {
-  if (!this.isNew && !DEADLINE_INPUTS.some((field) => this.isModified(field))) {
-    return;
-  }
-
-  const deadlines = calculateDeadlines(this.ngayVao, this.phanLoai);
-  if (deadlines) {
-    this.ngayTrinhLanhDao = deadlines.ngayTrinhLanhDao;
-    this.ngayHetHan = this.ngayGiaHan || this.ngayHenTra || deadlines.ngayHetHan;
-  }
+  applyWorkflow(this, {
+    changed: (field) => this.isNew || this.isModified(field),
+    explicit: (field) => (this.isNew ? this[field] !== null && this[field] !== undefined : this.isModified(field)),
+  });
 });
 
 const User = mongoose.models.User || mongoose.model('User', userSchema);
@@ -268,8 +289,8 @@ module.exports = {
   MUC_DO_UU_TIEN,
   KET_QUA_TRINH,
   LAN_TRINH_MAX,
+  QUY_TRINH_DATE_FIELDS,
   PASSWORD_MIN_LENGTH,
   USERNAME_PATTERN,
   EMAIL_PATTERN,
-  calculateDeadlines,
 };

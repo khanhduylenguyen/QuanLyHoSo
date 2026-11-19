@@ -1,14 +1,15 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { format, isValid, parseISO } from 'date-fns';
+import { addDays, format, isValid, parseISO } from 'date-fns';
 import { CalendarClock, Cpu, FilePlus2, FilePen, KeyRound, Lock, Printer, Save, Send, X } from 'lucide-react';
 import DossierHistory from '@/components/DossierHistory';
 import DossierAttachments from '@/components/DossierAttachments';
 import SubmissionsEditor from '@/components/SubmissionsEditor';
+import GcnStepsEditor, { GCN_STEP_DATE_KEYS } from '@/components/GcnStepsEditor';
 import {
+  BUOC_LABELS,
   MUC_DO_UU_TIEN_LABELS,
-  TRANG_THAI_LABELS,
   addDeadlineDays,
   dayUnit,
   getUserName,
@@ -27,13 +28,22 @@ const emptyForm = (defaultLoai = '') => ({
   ngayHenTra: '',
   ngayGiaHan: '',
   canBoThuLy: '',
-  trangThai: 'MOI_TIEP_NHAN',
   ghiChuCanBo: '',
   ghiChu: '',
   chiDaoLanhDao: '',
   mucDoUuTien: 'TRUNG_BINH',
   lanTrinh: [],
   lyDo: '',
+  // Quy trình GCN
+  ngayChuyen: '',
+  to: '',
+  ghiChuUuTien: '',
+  congNhanThemDat: false,
+  capGCN: true,
+  buoc: 'DANG_THU_LY',
+  soGCN: '',
+  giaiTrinh: '',
+  ...Object.fromEntries(GCN_STEP_DATE_KEYS.map((key) => [key, ''])),
 });
 
 const toSubmissionRows = (dossier) =>
@@ -49,13 +59,21 @@ const toFormState = (dossier) => ({
   ngayHenTra: toDateInputValue(dossier.ngayHenTra),
   ngayGiaHan: toDateInputValue(dossier.ngayGiaHan),
   canBoThuLy: dossier.canBoThuLy?._id ?? '',
-  trangThai: dossier.trangThai ?? 'MOI_TIEP_NHAN',
   ghiChuCanBo: dossier.ghiChuCanBo ?? '',
   ghiChu: dossier.ghiChu ?? '',
   chiDaoLanhDao: dossier.chiDaoLanhDao ?? '',
   mucDoUuTien: dossier.mucDoUuTien ?? 'TRUNG_BINH',
   lanTrinh: toSubmissionRows(dossier),
   lyDo: '',
+  ngayChuyen: toDateInputValue(dossier.ngayChuyen),
+  to: dossier.to ?? '',
+  ghiChuUuTien: dossier.ghiChuUuTien ?? '',
+  congNhanThemDat: Boolean(dossier.congNhanThemDat),
+  capGCN: Boolean(dossier.capGCN),
+  buoc: dossier.buoc ?? 'DANG_THU_LY',
+  soGCN: dossier.soGCN ?? '',
+  giaiTrinh: dossier.giaiTrinh ?? '',
+  ...Object.fromEntries(GCN_STEP_DATE_KEYS.map((key) => [key, toDateInputValue(dossier[key])])),
 });
 
 const formatInputDate = (value) => {
@@ -100,19 +118,22 @@ export default function DossierFormModal({ open, dossier, role, userId, meta, ca
 
   const rule = useMemo(() => meta?.phanLoai?.find((item) => item.ma === form.phanLoai), [meta, form.phanLoai]);
 
-  // Cùng quy tắc với backend: Gia hạn → Ngày hẹn trả → Ngày vào + hạn mặc định.
+  // Cùng quy tắc với backend (gcn.js): hạn trình NY = Ngày vào + N ngày làm việc;
+  // hạn trả = Gia hạn → (Ngày hẹn trả hoặc Ngày vào + hạn của loại) + thời gian niêm yết.
   const preview = useMemo(() => {
     const start = parseISO(form.ngayVao);
-    if (!rule || !isValid(start)) return null;
-    const override = formatInputDate(form.ngayGiaHan) ?? formatInputDate(form.ngayHenTra);
+    const q = meta?.quyTrinh;
+    if (!rule || !q || !isValid(start)) return null;
+    const henTra = parseISO(form.ngayHenTra);
+    const base = isValid(henTra) ? henTra : addDeadlineDays(start, rule.hetHan, meta?.calendar);
+    const due = rule.niemYet ? addDays(base, q.henTraCongNY) : base;
     return {
-      trinh: format(addDeadlineDays(start, rule.trinh, meta?.calendar), 'dd/MM/yyyy'),
-      hetHan: override ?? format(addDeadlineDays(start, rule.hetHan, meta?.calendar), 'dd/MM/yyyy'),
+      trinhNY: format(addDeadlineDays(start, q.trinhNY, meta?.calendar), 'dd/MM/yyyy'),
+      trinhNYNote: `(+${q.trinhNY} ${dayUnit(meta?.calendar)})`,
+      hetHan: formatInputDate(form.ngayGiaHan) ?? format(due, 'dd/MM/yyyy'),
       hetHanNote: formatInputDate(form.ngayGiaHan)
         ? '(theo gia hạn)'
-        : formatInputDate(form.ngayHenTra)
-          ? '(theo biên nhận)'
-          : `(+${rule.hetHan} ${dayUnit(meta?.calendar)})`,
+        : `(${isValid(henTra) ? 'hẹn trả theo BN' : `+${rule.hetHan} ${dayUnit(meta?.calendar)}`}${rule.niemYet ? ` + ${q.henTraCongNY} ngày niêm yết` : ''})`,
     };
   }, [rule, meta, form.ngayVao, form.ngayHenTra, form.ngayGiaHan]);
 
@@ -124,6 +145,7 @@ export default function DossierFormModal({ open, dossier, role, userId, meta, ca
   const needsReason = transferring || extending;
 
   const update = (field) => (event) => setForm((prev) => ({ ...prev, [field]: event.target.value }));
+  const setField = (field, value) => setForm((prev) => ({ ...prev, [field]: value }));
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -133,8 +155,15 @@ export default function DossierFormModal({ open, dossier, role, userId, meta, ca
     // Chỉ gửi các lần trình khi có thay đổi (tránh ghi đè ngày trình của hồ sơ cũ).
     const submissionsChanged = JSON.stringify(form.lanTrinh) !== JSON.stringify(dossier ? toSubmissionRows(dossier) : []);
     const lanTrinh = submissionsChanged ? { lanTrinh: form.lanTrinh.map((item) => ({ ...item, ghiChu: item.ghiChu.trim() })) } : {};
+    // Bước quy trình + ngày từng bước: cán bộ thụ lý cũng cập nhật được. Ô trống gửi null.
+    const steps = {
+      buoc: form.buoc,
+      soGCN: form.soGCN.trim(),
+      giaiTrinh: form.giaiTrinh.trim(),
+      ...Object.fromEntries(GCN_STEP_DATE_KEYS.map((key) => [key, form[key] || null])),
+    };
     const body = progressOnly
-      ? { trangThai: form.trangThai, ghiChuCanBo: form.ghiChuCanBo.trim(), ...lanTrinh }
+      ? { ghiChuCanBo: form.ghiChuCanBo.trim(), ...steps, ...lanTrinh }
       : {
           maHoSo: form.maHoSo.trim(),
           soBienNhan: form.soBienNhan.trim(),
@@ -145,7 +174,12 @@ export default function DossierFormModal({ open, dossier, role, userId, meta, ca
           ngayHenTra: form.ngayHenTra || null,
           ngayGiaHan: form.ngayGiaHan || null,
           canBoThuLy: form.canBoThuLy || null,
-          trangThai: form.trangThai,
+          ngayChuyen: form.ngayChuyen || null,
+          to: form.to.trim(),
+          ghiChuUuTien: form.ghiChuUuTien.trim(),
+          congNhanThemDat: form.congNhanThemDat,
+          capGCN: form.capGCN,
+          ...steps,
           ghiChuCanBo: form.ghiChuCanBo.trim(),
           ghiChu: form.ghiChu.trim(),
           chiDaoLanhDao: form.chiDaoLanhDao.trim() || null,
@@ -174,7 +208,7 @@ export default function DossierFormModal({ open, dossier, role, userId, meta, ca
       aria-labelledby="dossier-form-title"
       onMouseDown={(event) => event.target === event.currentTarget && onClose()}
     >
-      <div className="my-8 w-full max-w-2xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+      <div className="my-8 w-full max-w-4xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
         <div className="flex items-center justify-between bg-slate-900 px-6 py-4 text-white">
           <div className="flex items-center gap-2.5">
             <HeaderIcon className="h-5 w-5 text-emerald-400" />
@@ -184,8 +218,8 @@ export default function DossierFormModal({ open, dossier, role, userId, meta, ca
               </h3>
               <p className="text-xs text-slate-400">
                 {progressOnly
-                  ? 'Cán bộ chỉ cập nhật Trạng thái & Ghi chú tiến độ trên hồ sơ của mình'
-                  : 'Nhập Ngày vào hồ sơ để hệ thống tự động tính hạn trình LĐ và ngày hết hạn'}
+                  ? 'Cán bộ cập nhật tình trạng, ngày từng bước và tiến độ trên hồ sơ của mình'
+                  : 'Nhập Ngày nhận để hệ thống tự tính hạn trình niêm yết và hạn trả hồ sơ'}
               </p>
             </div>
           </div>
@@ -242,14 +276,25 @@ export default function DossierFormModal({ open, dossier, role, userId, meta, ca
             </label>
           </div>
 
+          <label className="block">
+            <Label className="text-amber-800">Ghi chú ưu tiên (Lãnh đạo xem)</Label>
+            <input
+              value={form.ghiChuUuTien}
+              onChange={update('ghiChuUuTien')}
+              disabled={progressOnly}
+              placeholder="Hồ sơ cần ưu tiên / lưu ý cho Lãnh đạo…"
+              className={`${inputClass} border-amber-200 bg-amber-50/40`}
+            />
+          </label>
+
           <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
             <span className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-indigo-700">
-              <Cpu className="h-4 w-4" /> Tính toán hạn tự động theo Loại thủ tục &amp; Ngày vào
+              <Cpu className="h-4 w-4" /> Tính hạn tự động theo Loại hồ sơ &amp; Ngày nhận
             </span>
 
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <label className="block">
-                <Label>Loại thủ tục *</Label>
+                <Label>Loại hồ sơ *</Label>
                 <select
                   value={form.phanLoai}
                   onChange={update('phanLoai')}
@@ -258,16 +303,31 @@ export default function DossierFormModal({ open, dossier, role, userId, meta, ca
                 >
                   {(meta?.phanLoai ?? []).map((item) => (
                     <option key={item.ma} value={item.ma}>
-                      {item.moTa} (hạn {item.hetHan} {dayUnit(meta?.calendar)})
+                      {item.moTa} (hạn {item.hetHan} {dayUnit(meta?.calendar)}{item.niemYet ? ' + niêm yết' : ''})
                     </option>
                   ))}
                 </select>
                 {dossier?.loaiHoSoGoc && (
                   <span className="mt-1 block text-[11px] text-slate-500">Trong sổ: {dossier.loaiHoSoGoc}</span>
                 )}
+                <span className="mt-1.5 flex gap-4 text-[11px] text-slate-600">
+                  <label className="flex items-center gap-1">
+                    <input type="checkbox" checked={form.capGCN} disabled={progressOnly} onChange={(e) => setField('capGCN', e.target.checked)} />
+                    Cấp GCN
+                  </label>
+                  <label className="flex items-center gap-1">
+                    <input
+                      type="checkbox"
+                      checked={form.congNhanThemDat}
+                      disabled={progressOnly}
+                      onChange={(e) => setField('congNhanThemDat', e.target.checked)}
+                    />
+                    Công nhận thêm đất
+                  </label>
+                </span>
               </label>
               <label className="block">
-                <Label>Ngày vào Hồ sơ *</Label>
+                <Label>Ngày nhận *</Label>
                 <input
                   type="date"
                   required
@@ -276,6 +336,10 @@ export default function DossierFormModal({ open, dossier, role, userId, meta, ca
                   disabled={progressOnly}
                   className={`${inputClass} bg-white font-semibold text-indigo-700`}
                 />
+              </label>
+              <label className="block">
+                <Label>Ngày chuyển</Label>
+                <input type="date" value={form.ngayChuyen} onChange={update('ngayChuyen')} disabled={progressOnly} className={`${inputClass} bg-white`} />
               </label>
               <label className="block">
                 <Label>Ngày hẹn trả (theo biên nhận)</Label>
@@ -299,21 +363,21 @@ export default function DossierFormModal({ open, dossier, role, userId, meta, ca
               </label>
             </div>
             <p className="text-[11px] text-slate-500">
-              Để trống Ngày hẹn trả / Gia hạn thì hạn xử lý = Ngày vào + hạn mặc định của loại thủ tục.
+              Để trống Ngày hẹn trả thì hạn trả = Ngày nhận + hạn mặc định của loại; loại có niêm yết cộng thêm thời gian niêm yết.
             </p>
 
             <div className="grid grid-cols-1 gap-3 pt-2 sm:grid-cols-2">
               <div className="flex items-center justify-between rounded-lg border border-sky-200 bg-sky-50 p-3">
                 <div>
-                  <span className="block text-[11px] font-semibold uppercase text-sky-700">⚡ Ngày phải trình Lãnh đạo</span>
-                  <span className="text-base font-bold text-sky-900">{preview?.trinh ?? '--/--/----'}</span>
-                  <span className="mt-0.5 block text-[11px] text-sky-700">{rule ? `(+${rule.trinh} ${dayUnit(meta?.calendar)})` : ''}</span>
+                  <span className="block text-[11px] font-semibold uppercase text-sky-700">⚡ Hạn trình niêm yết lên UB</span>
+                  <span className="text-base font-bold text-sky-900">{form.hanTrinhNY ? formatInputDate(form.hanTrinhNY) : preview?.trinhNY ?? '--/--/----'}</span>
+                  <span className="mt-0.5 block text-[11px] text-sky-700">{form.hanTrinhNY ? '(đã đặt)' : preview?.trinhNYNote ?? ''}</span>
                 </div>
                 <Send className="h-5 w-5 text-sky-500" />
               </div>
               <div className="flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 p-3">
                 <div>
-                  <span className="block text-[11px] font-semibold uppercase text-amber-800">⏰ Ngày hết hạn xử lý</span>
+                  <span className="block text-[11px] font-semibold uppercase text-amber-800">⏰ Hạn trả hồ sơ</span>
                   <span className="text-base font-bold text-amber-900">{preview?.hetHan ?? '--/--/----'}</span>
                   <span className="mt-0.5 block text-[11px] text-amber-800">{preview?.hetHanNote ?? ''}</span>
                 </div>
@@ -321,6 +385,8 @@ export default function DossierFormModal({ open, dossier, role, userId, meta, ca
               </div>
             </div>
           </div>
+
+          <GcnStepsEditor form={form} onField={setField} steps={meta?.buoc ?? BUOC_LABELS} quyTrinh={meta?.quyTrinh} />
 
           <SubmissionsEditor
             value={form.lanTrinh}
@@ -348,14 +414,19 @@ export default function DossierFormModal({ open, dossier, role, userId, meta, ca
               </span>
             </label>
             <label className="block">
-              <Label>Trạng thái xử lý</Label>
-              <select value={form.trangThai} onChange={update('trangThai')} className={`${inputClass} bg-white`}>
-                {Object.entries(TRANG_THAI_LABELS).map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
-              </select>
+              <Label>Tổ</Label>
+              <input
+                value={form.to}
+                onChange={update('to')}
+                disabled={progressOnly}
+                list="to-options"
+                placeholder="VD: TN-MT"
+                className={inputClass}
+              />
+              <datalist id="to-options">
+                <option value="TN-MT" />
+                <option value="XD-CT" />
+              </datalist>
             </label>
           </div>
 

@@ -3,7 +3,7 @@
  * Ghi ở tầng API (không phải middleware Mongoose) để biết được người thao tác.
  */
 const mongoose = require('mongoose');
-const { User } = require('./models');
+const { User, QUY_TRINH_DATE_FIELDS } = require('./models');
 
 const { Schema } = mongoose;
 
@@ -15,8 +15,9 @@ const TRACKED_FIELDS = Object.freeze([
   'maHoSo', 'soBienNhan', 'tenHoSo', 'diaChi', 'donViGui', 'phanLoai',
   'ngayVao', 'ngayHenTra', 'ngayGiaHan', 'ngayTrinhLanhDao', 'ngayHetHan', 'ngayTrinhThucTe', 'ngayKetThuc',
   'canBoThuLy', 'trangThai', 'ghiChuCanBo', 'ghiChu', 'chiDaoLanhDao', 'mucDoUuTien', 'lanTrinh',
+  'buoc', 'to', 'soGCN', 'giaiTrinh', 'ghiChuUuTien', 'congNhanThemDat', 'capGCN', ...QUY_TRINH_DATE_FIELDS,
 ]);
-const DATE_FIELDS = new Set(['ngayVao', 'ngayHenTra', 'ngayGiaHan', 'ngayTrinhLanhDao', 'ngayHetHan', 'ngayTrinhThucTe', 'ngayKetThuc']);
+const DATE_FIELDS = new Set(['ngayVao', 'ngayHenTra', 'ngayGiaHan', 'ngayTrinhLanhDao', 'ngayHetHan', 'ngayTrinhThucTe', 'ngayKetThuc', ...QUY_TRINH_DATE_FIELDS]);
 
 const dossierLogSchema = new Schema(
   {

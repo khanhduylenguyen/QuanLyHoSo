@@ -18,7 +18,7 @@ import { saveBlob, todayStamp } from '@/lib/download';
 import { formatDate, getUserName, toDateInputValue } from '@/lib/dossier';
 
 const DEFAULT_SORTING = [{ id: 'ngayHetHan', desc: false }];
-const DEFAULT_FILTERS = { phanLoai: 'ALL', canBo: 'ALL', trangThai: 'ALL' };
+const DEFAULT_FILTERS = { phanLoai: 'ALL', canBo: 'ALL', buoc: 'ALL' };
 const TOAST_DURATION_MS = 3200;
 const SEARCH_DEBOUNCE_MS = 350;
 const EMPTY_STATS = { total: 0, urgentSubmit: 0, dueNextWeek: 0, overdue: 0 };
@@ -26,9 +26,9 @@ const EMPTY_STATS = { total: 0, urgentSubmit: 0, dueNextWeek: 0, overdue: 0 };
 const SORT_LABELS = {
   maHoSo: 'Mã Hồ sơ',
   tenHoSo: 'Tên Hồ sơ',
-  ngayVao: 'Ngày vào HS',
-  ngayTrinhLanhDao: 'Ngày trình Lãnh đạo',
-  ngayHetHan: 'Ngày hết hạn',
+  ngayVao: 'Ngày nhận',
+  ngayTrinhLanhDao: 'Hạn bước tiếp',
+  ngayHetHan: 'Hạn trả',
   mucDoUuTien: 'Ưu tiên nội bộ',
 };
 
@@ -103,7 +103,7 @@ export default function DossierManagementPage() {
       q: debouncedSearch,
       quick: quickFilter,
       phanLoai: filters.phanLoai,
-      trangThai: filters.trangThai,
+      buoc: filters.buoc,
       canBo: role === 'CAN_BO' ? 'ALL' : filters.canBo,
       ...(sort && { sort: sort.id, dir: sort.desc ? 'desc' : 'asc' }),
     };
@@ -162,7 +162,7 @@ export default function DossierManagementPage() {
     quickFilter !== QUICK_FILTERS.ALL ||
     search.trim() !== '' ||
     filters.phanLoai !== 'ALL' ||
-    filters.trangThai !== 'ALL' ||
+    filters.buoc !== 'ALL' ||
     (role !== 'CAN_BO' && filters.canBo !== 'ALL');
 
   const sortText = useMemo(() => {
@@ -221,7 +221,7 @@ export default function DossierManagementPage() {
         api.getDossierStats().then(({ data: kpi }) => setStats(kpi)).catch(() => {});
         if ('ngayVao' in patch || 'phanLoai' in patch) {
           pushToast(
-            `⚡ ${data.maHoSo}: tự động tính lại Ngày trình LĐ (${formatDate(data.ngayTrinhLanhDao)}) & Ngày hết hạn (${formatDate(data.ngayHetHan)})`,
+            `⚡ ${data.maHoSo}: tự động tính lại hạn trình niêm yết (${formatDate(data.hanTrinhNY)}) & hạn trả (${formatDate(data.ngayHetHan)})`,
             'success'
           );
         } else if ('ngayGiaHan' in patch) {
@@ -233,8 +233,8 @@ export default function DossierManagementPage() {
               : `Hồ sơ ${data.maHoSo} chuyển về Chưa phân công`,
             'info'
           );
-        } else if (patch.trangThai === 'HOAN_THANH') {
-          pushToast(`✓ Hồ sơ ${data.maHoSo} đã hoàn thành ngày ${formatDate(data.ngayKetThuc)}`, 'success');
+        } else if (patch.trangThai === 'HOAN_THANH' || patch.buoc === 'DA_GIAI_QUYET') {
+          pushToast(`✓ Hồ sơ ${data.maHoSo} đã giải quyết ngày ${formatDate(data.ngayKetThuc)}`, 'success');
         } else {
           pushToast(`Đã lưu cập nhật trên hồ sơ ${data.maHoSo}`, 'success');
         }

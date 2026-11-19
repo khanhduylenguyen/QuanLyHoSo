@@ -1,7 +1,8 @@
 /**
  * Cấu hình hệ thống lưu trong MongoDB (collection "settings", mỗi khoá một bản ghi) + bộ nhớ đệm.
  *
- * - deadlines: thời hạn theo loại thủ tục, có tính theo ngày làm việc không, ngày nghỉ cuối tuần, ngày lễ.
+ * - deadlines: thời hạn theo loại hồ sơ, số ngày từng bước quy trình GCN (quyTrinh), có tính theo ngày làm việc
+ *   không, ngày nghỉ cuối tuần, ngày lễ.
  * - reminders: nhắc hạn qua email (xem reminders.js).
  *
  * Hook Mongoose tính hạn chạy đồng bộ nên đọc từ bộ đệm; gọi loadSettings() sau khi kết nối DB
@@ -26,6 +27,17 @@ const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
 const MAX_RULE_DAYS = 365;
 const MAX_HOLIDAYS = 500;
 
+// Số ngày từng bước quy trình GCN. null = chưa quy định → bước đó chỉ ghi ngày, không tự tính hạn.
+// trinhNY / duThao / pcThue / trinhGCN tính theo lịch làm việc (useWorkingDays); niemYet, henTraCongNY là ngày lịch.
+const QUY_TRINH_KEYS = Object.freeze({
+  trinhNY: { label: 'Hạn trình niêm yết (từ ngày nhận)', required: true },
+  niemYet: { label: 'Thời gian niêm yết (ngày lịch)', required: true },
+  henTraCongNY: { label: 'Hạn trả cộng thêm do niêm yết (ngày lịch)', required: true },
+  duThao: { label: 'Hạn trình dự thảo cấp GCN (từ ngày kết thúc niêm yết)' },
+  pcThue: { label: 'Hạn trình phiếu chuyển thuế (từ ngày trình dự thảo)' },
+  trinhGCN: { label: 'Hạn trình cấp GCN (từ ngày nhận kết quả NVTC)' },
+});
+
 // Ngày lễ cố định theo dương lịch. Tết Nguyên đán, Giỗ Tổ (âm lịch) và ngày nghỉ bù thay đổi
 // theo từng năm nên Quản trị tự thêm trong trang Cấu hình hạn.
 const DEFAULT_HOLIDAYS = ['2026-01-01', '2026-04-30', '2026-05-01', '2026-09-02', '2027-01-01', '2027-04-30', '2027-05-01', '2027-09-02'];
@@ -35,7 +47,9 @@ const DEFAULTS = {
     useWorkingDays: true,
     weekendDays: [0, 6], // 0 = Chủ nhật, 6 = Thứ bảy
     holidays: DEFAULT_HOLIDAYS,
-    rules: Object.fromEntries(Object.entries(PHAN_LOAI_RULES).map(([code, rule]) => [code, { trinh: rule.trinh, hetHan: rule.hetHan }])),
+    rules: Object.fromEntries(Object.entries(PHAN_LOAI_RULES).map(([code, rule]) => [code, { hetHan: rule.hetHan }])),
+    // Theo công thức trong sheet GCN: hạn trình NY = WORKDAY(Ngày nhận, 8); niêm yết 15 ngày; hạn trả + 15.
+    quyTrinh: { trinhNY: 8, niemYet: 15, henTraCongNY: 15, duThao: null, pcThue: null, trinhGCN: null },
   },
   reminders: {
     enabled: false,
@@ -113,11 +127,15 @@ function addDeadlineDays(start, days, config = cache.deadlines) {
 }
 
 /** Thời hạn đang áp dụng cho một loại thủ tục. */
-const ruleFor = (phanLoai) => cache.deadlines.rules[phanLoai] ?? null;
+const ruleFor = (phanLoai) =>
+  PHAN_LOAI_RULES[phanLoai] ? { ...PHAN_LOAI_RULES[phanLoai], ...cache.deadlines.rules[phanLoai] } : null;
+
+/** Số ngày từng bước quy trình GCN đang áp dụng. */
+const quyTrinhConfig = () => cache.deadlines.quyTrinh;
 
 /** Danh sách loại + thời hạn hiệu lực (cho API /meta và trang cấu hình). */
 const effectiveRules = () =>
-  Object.entries(PHAN_LOAI_RULES).map(([ma, rule]) => ({ ma, moTa: rule.moTa, ...(cache.deadlines.rules[ma] ?? rule) }));
+  Object.entries(PHAN_LOAI_RULES).map(([ma, rule]) => ({ ma, moTa: rule.moTa, niemYet: rule.niemYet, hetHan: ruleFor(ma).hetHan }));
 
 /* ------------------------------------------------------------------ */
 /* Kiểm tra dữ liệu cấu hình                                          */
@@ -141,16 +159,26 @@ function validateDeadlineSettings(input) {
 
   output.rules = {};
   for (const code of Object.keys(PHAN_LOAI_RULES)) {
-    const rule = input?.rules?.[code] ?? cache.deadlines.rules[code];
-    const trinh = Number(rule?.trinh);
-    const hetHan = Number(rule?.hetHan);
-    const name = PHAN_LOAI_RULES[code].moTa;
+    const hetHan = Number((input?.rules?.[code] ?? ruleFor(code))?.hetHan);
     if (!Number.isInteger(hetHan) || hetHan < 1 || hetHan > MAX_RULE_DAYS) {
-      errors.push(`${name}: hạn xử lý phải là số nguyên 1–${MAX_RULE_DAYS}`);
-    } else if (!Number.isInteger(trinh) || trinh < 1 || trinh > hetHan) {
-      errors.push(`${name}: hạn trình LĐ phải là số nguyên 1–${hetHan} (không vượt hạn xử lý)`);
+      errors.push(`${PHAN_LOAI_RULES[code].moTa}: hạn trả phải là số nguyên 1–${MAX_RULE_DAYS}`);
     }
-    output.rules[code] = { trinh, hetHan };
+    output.rules[code] = { hetHan };
+  }
+
+  output.quyTrinh = {};
+  for (const [key, { label, required }] of Object.entries(QUY_TRINH_KEYS)) {
+    // Có gửi khoá thì dùng giá trị gửi (kể cả null = để trống); không gửi thì giữ cấu hình hiện tại.
+    const raw = input?.quyTrinh && key in input.quyTrinh ? input.quyTrinh[key] : cache.deadlines.quyTrinh[key];
+    if ((raw === null || raw === '' || raw === undefined) && !required) {
+      output.quyTrinh[key] = null;
+      continue;
+    }
+    const days = Number(raw);
+    if (!Number.isInteger(days) || days < (required ? 1 : 0) || days > MAX_RULE_DAYS) {
+      errors.push(`${label}: phải là số nguyên ${required ? 1 : 0}–${MAX_RULE_DAYS}${required ? '' : ' (để trống = không tự tính hạn)'}`);
+    }
+    output.quyTrinh[key] = days;
   }
   return { value: output, errors };
 }
@@ -164,6 +192,8 @@ module.exports = {
   isNonWorkingDay,
   todayVN,
   ruleFor,
+  quyTrinhConfig,
+  QUY_TRINH_KEYS,
   effectiveRules,
   validateDeadlineSettings,
 };

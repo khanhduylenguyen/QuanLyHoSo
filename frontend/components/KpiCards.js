@@ -59,10 +59,10 @@ export default function KpiCards({ stats, scopeText, quickFilter, onSelect }) {
       >
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-blue-700">Cần trình LĐ gấp (≤ 2 ngày)</p>
+            <p className="text-xs font-semibold uppercase tracking-wider text-blue-700">Hạn trình bước tiếp ≤ 2 ngày</p>
             <div className="mt-1 flex items-baseline gap-2">
               <span className="text-2xl font-bold text-blue-700">{stats.urgentSubmit}</span>
-              <span className="text-xs font-medium text-blue-600">hồ sơ chưa trình</span>
+              <span className="text-xs font-medium text-blue-600">hồ sơ sắp / quá hạn trình</span>
             </div>
           </div>
           <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
@@ -70,7 +70,7 @@ export default function KpiCards({ stats, scopeText, quickFilter, onSelect }) {
           </div>
         </div>
         <div className="mt-2.5 flex items-center justify-between text-xs text-slate-500">
-          <span>Tự động tính từ Ngày vào HS</span>
+          <span>Theo bước kế tiếp cần trình</span>
           <span className="font-semibold text-blue-600 group-hover:underline">Lọc hồ sơ cần trình →</span>
         </div>
       </Card>

@@ -1,7 +1,7 @@
 'use client';
 
 import { CalendarRange, LoaderCircle, RefreshCw, RotateCcw, Search, X } from 'lucide-react';
-import { TRANG_THAI_LABELS, dayUnit, getUserName } from '@/lib/dossier';
+import { BUOC_LABELS, dayUnit, getUserName } from '@/lib/dossier';
 
 const selectClass =
   'rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-60 sm:text-sm';
@@ -91,13 +91,13 @@ export default function Toolbar({
           </select>
 
           <select
-            value={filters.trangThai}
-            onChange={(event) => onFilterChange('trangThai', event.target.value)}
-            aria-label="Lọc theo trạng thái"
+            value={filters.buoc}
+            onChange={(event) => onFilterChange('buoc', event.target.value)}
+            aria-label="Lọc theo tình trạng"
             className={selectClass}
           >
-            <option value="ALL">📌 Tất cả Trạng thái</option>
-            {Object.entries(TRANG_THAI_LABELS).map(([value, label]) => (
+            <option value="ALL">📌 Tất cả Tình trạng</option>
+            {Object.entries(meta?.buoc ?? BUOC_LABELS).map(([value, label]) => (
               <option key={value} value={value}>
                 {label}
               </option>
@@ -171,11 +171,10 @@ export default function Toolbar({
       </div>
 
       <div className="flex flex-wrap items-start justify-between gap-2 border-t border-slate-100 pt-2 text-xs text-slate-500">
-        {/* 17 loại thủ tục: thu gọn để không chiếm chỗ, bấm để xem */}
+        {/* Hạn mặc định + số ngày từng bước: thu gọn để không chiếm chỗ, bấm để xem */}
         <details className="group min-w-0 flex-1">
           <summary className="cursor-pointer select-none font-semibold text-slate-600 hover:text-slate-900">
-            Hạn mặc định theo loại thủ tục ({phanLoaiRules.length} loại, tính theo {dayUnit(meta?.calendar)}) — dùng
-            khi hồ sơ không có Ngày hẹn trả
+            Cách tính hạn (theo {dayUnit(meta?.calendar)}) — hạn trình niêm yết, thời gian niêm yết, hạn trả mặc định
           </summary>
           <div className="mt-2 flex flex-wrap gap-1.5">
             {phanLoaiRules.map((rule) => (
@@ -183,9 +182,14 @@ export default function Toolbar({
                 key={rule.ma}
                 className="inline-flex items-center gap-1 rounded border border-slate-200 bg-slate-100 px-2 py-0.5 font-medium text-slate-700"
               >
-                <strong>{rule.moTa}:</strong> Trình +{rule.trinh}d / Hạn +{rule.hetHan}d
+                <strong>{rule.moTa}:</strong> Hạn trả +{rule.hetHan}d{rule.niemYet ? ' + niêm yết' : ''}
               </span>
             ))}
+            {meta?.quyTrinh && (
+              <span className="inline-flex items-center gap-1 rounded border border-emerald-200 bg-emerald-50 px-2 py-0.5 font-medium text-emerald-800">
+                Trình niêm yết: Ngày nhận +{meta.quyTrinh.trinhNY}d · Niêm yết {meta.quyTrinh.niemYet} ngày · Hạn trả +{meta.quyTrinh.henTraCongNY} ngày niêm yết
+              </span>
+            )}
           </div>
         </details>
         <span className="font-medium text-slate-600">

@@ -12,14 +12,15 @@ const {
   Dossier,
   ROLES,
   TRANG_THAI,
-  calculateDeadlines,
   MUC_DO_UU_TIEN,
+  QUY_TRINH_DATE_FIELDS,
   KET_QUA_TRINH,
   LAN_TRINH_MAX,
   PASSWORD_MIN_LENGTH,
   USERNAME_PATTERN,
   EMAIL_PATTERN,
 } = require('./models');
+const { BUOC, BUOC_CODES, BUOC_KE_TIEP, applyWorkflow } = require('./gcn');
 const { isMailConfigured, sendWelcomeEmail, sendPasswordResetEmail, APP_URL } = require('./mailer');
 const multer = require('multer');
 const { readWorkbook, analyzeImport, previewCodes, commitImport, buildTemplate } = require('./importer');
@@ -45,21 +46,25 @@ const ASSIGNEE_FIELDS = 'username hoTen role';
 
 // Trường mà mỗi role được phép ghi khi tạo/sửa hồ sơ.
 // ngayTrinhThucTe không ghi trực tiếp: tự lấy từ lần trình gần nhất trong lanTrinh.
+// Quy trình GCN: ngày từng bước + bước hiện tại, số GCN, giải trình — cán bộ thụ lý cũng ghi được.
+const STEP_FIELDS = [...QUY_TRINH_DATE_FIELDS, 'buoc', 'soGCN', 'giaiTrinh'];
 const OFFICE_WRITABLE_FIELDS = [
   'maHoSo', 'soBienNhan', 'tenHoSo', 'diaChi', 'donViGui', 'phanLoai',
   'ngayVao', 'ngayHenTra', 'ngayGiaHan', 'ngayKetThuc', 'lanTrinh',
   'canBoThuLy', 'ghiChuCanBo', 'ghiChu', 'chiDaoLanhDao', 'mucDoUuTien', 'trangThai',
+  'to', 'ghiChuUuTien', 'congNhanThemDat', 'capGCN', ...STEP_FIELDS,
 ];
 const WRITABLE_FIELDS = Object.freeze({
   ADMIN: OFFICE_WRITABLE_FIELDS,
   VAN_THU: OFFICE_WRITABLE_FIELDS,
   // Cán bộ thụ lý là người trình hồ sơ nên được ghi các lần trình của hồ sơ mình.
-  CAN_BO: ['trangThai', 'ghiChuCanBo', 'lanTrinh'],
+  CAN_BO: ['trangThai', 'ghiChuCanBo', 'lanTrinh', ...STEP_FIELDS],
 });
 
 // Ngày bắt buộc / ngày tuỳ chọn (gửi '' hoặc null để xoá).
 const REQUIRED_DATE_FIELDS = ['ngayVao'];
-const OPTIONAL_DATE_FIELDS = ['ngayHenTra', 'ngayGiaHan', 'ngayKetThuc'];
+const OPTIONAL_DATE_FIELDS = ['ngayHenTra', 'ngayGiaHan', 'ngayKetThuc', ...QUY_TRINH_DATE_FIELDS];
+const TEXT_LIMITS = { to: 50, soGCN: 100, giaiTrinh: 2000, ghiChuUuTien: 1000 };
 
 // Role được phép thực hiện từng thao tác. Dùng cho cả authorize() lẫn
 // ma trận phân quyền trả về trang quản trị, nên hai nơi luôn khớp nhau.
@@ -80,7 +85,7 @@ const ROW_SCOPED_ROLES = Object.freeze(['CAN_BO']);
 const { HttpError, asyncHandler } = require('./http');
 const { loginByUser, loginByIp, passwordResetByIp } = require('./rateLimit');
 const { DossierLog, diffDossier, logDossier, logMany, redactLog } = require('./audit');
-const { loadSettings, getSettings, saveSettings, effectiveRules, validateDeadlineSettings, todayVN } = require('./settings');
+const { loadSettings, getSettings, saveSettings, effectiveRules, validateDeadlineSettings, todayVN, QUY_TRINH_KEYS } = require('./settings');
 const { buildSummary, buildMonthly, buildOldestOverdue, buildDossierWorkbook, buildSummaryWorkbook } = require('./reports');
 const { runReminders, runDueReminders, startReminderScheduler, validateReminderSettings } = require('./reminders');
 const {
@@ -229,6 +234,15 @@ const buildPayload = (body, role) => {
     throw new HttpError(400, `mucDoUuTien phải thuộc: ${MUC_DO_UU_TIEN.join(', ')}`);
   }
   if ('lanTrinh' in payload) payload.lanTrinh = parseSubmissions(payload.lanTrinh);
+  if ('buoc' in payload && !BUOC_CODES.includes(payload.buoc)) {
+    throw new HttpError(400, `buoc phải thuộc: ${BUOC_CODES.join(', ')}`);
+  }
+  for (const field of ['congNhanThemDat', 'capGCN']) {
+    if (field in payload) payload[field] = payload[field] === true || payload[field] === 'true';
+  }
+  for (const [field, max] of Object.entries(TEXT_LIMITS)) {
+    if (field in payload) payload[field] = String(payload[field] ?? '').trim().slice(0, max);
+  }
   return payload;
 };
 
@@ -433,6 +447,9 @@ api.get('/meta', (req, res) => {
       // Lịch dùng cho phần xem trước hạn ở trình duyệt (cùng quy tắc với backend).
       calendar: (({ useWorkingDays, weekendDays, holidays }) => ({ useWorkingDays, weekendDays, holidays }))(getSettings('deadlines')),
       trangThai: TRANG_THAI,
+      buoc: BUOC,
+      buocKeTiep: BUOC_KE_TIEP,
+      quyTrinh: getSettings('deadlines').quyTrinh,
       mucDoUuTien: MUC_DO_UU_TIEN,
       upcomingWindowDays: UPCOMING_WINDOW_DAYS,
     },
@@ -481,6 +498,7 @@ const SEARCH_MAX_LENGTH = 100;
 const SORTABLE_FIELDS = Object.freeze(['maHoSo', 'tenHoSo', 'ngayVao', 'ngayTrinhLanhDao', 'ngayHetHan', 'mucDoUuTien']);
 const SEARCH_FIELDS = Object.freeze([
   'maHoSo', 'soBienNhan', 'tenHoSo', 'diaChi', 'donViGui', 'loaiHoSoGoc', 'ghiChu', 'ghiChuCanBo', 'chiDaoLanhDao',
+  'soGCN', 'giaiTrinh', 'ghiChuUuTien', 'to',
 ]);
 const QUICK_FILTERS = Object.freeze(['ALL', 'NEXT_WEEK', 'OVERDUE', 'URGENT_SUBMIT']);
 
@@ -491,7 +509,7 @@ const queryText = (value) => (typeof value === 'string' ? value.trim() : '');
  * Điều kiện "lọc nhanh" theo ngày Việt Nam (ngày lưu 00:00 UTC), cùng quy tắc với giao diện:
  * - NEXT_WEEK: hạn xử lý trong [hôm nay, hôm nay + 7];
  * - OVERDUE: chưa hoàn thành và hạn xử lý đã qua;
- * - URGENT_SUBMIT: chưa trình / chưa xong và hạn trình LĐ trễ hoặc còn ≤ 2 ngày.
+ * - URGENT_SUBMIT: chưa xong và hạn bước kế tiếp cần trình đã trễ hoặc còn ≤ 2 ngày.
  */
 function quickCondition(mode) {
   const today = todayVN();
@@ -500,9 +518,10 @@ function quickCondition(mode) {
       return { ngayHetHan: { $gte: today, $lt: new Date(today.getTime() + (UPCOMING_WINDOW_DAYS + 1) * DAY_MS) } };
     case 'OVERDUE':
       return { trangThai: { $ne: 'HOAN_THANH' }, ngayHetHan: { $lt: today } };
+    // ngayTrinhLanhDao = hạn của bước kế tiếp cần trình (null khi không chờ trình gì) — xem gcn.js.
     case 'URGENT_SUBMIT':
       return {
-        trangThai: { $nin: ['CHO_LANH_DAO_DUYET', 'HOAN_THANH'] },
+        trangThai: { $ne: 'HOAN_THANH' },
         ngayTrinhLanhDao: { $lt: new Date(today.getTime() + (URGENT_SUBMIT_DAYS + 1) * DAY_MS) },
       };
     default:
@@ -522,6 +541,12 @@ async function buildListFilter(auth, query = {}) {
   if (trangThai && trangThai !== 'ALL') {
     if (!TRANG_THAI.includes(trangThai)) throw new HttpError(400, 'trangThai không hợp lệ');
     and.push({ trangThai });
+  }
+
+  const buoc = queryText(query.buoc).toUpperCase();
+  if (buoc && buoc !== 'ALL') {
+    if (!BUOC_CODES.includes(buoc)) throw new HttpError(400, 'buoc không hợp lệ');
+    and.push({ buoc });
   }
 
   const canBo = queryText(query.canBo);
@@ -699,7 +724,7 @@ function classifyChange(before, dossier, lyDo) {
 const BULK_MAX = 3000;
 const BULK_CONCURRENCY = 25;
 // Trường được đổi hàng loạt theo role (cán bộ: chỉ trạng thái hồ sơ của mình).
-const BULK_FIELDS = { ADMIN: ['trangThai', 'canBoThuLy'], VAN_THU: ['trangThai', 'canBoThuLy'], CAN_BO: ['trangThai'] };
+const BULK_FIELDS = { ADMIN: ['trangThai', 'buoc', 'canBoThuLy'], VAN_THU: ['trangThai', 'buoc', 'canBoThuLy'], CAN_BO: ['trangThai', 'buoc'] };
 
 const parseIds = (ids) => {
   if (!Array.isArray(ids) || ids.length === 0) throw new HttpError(400, 'Chưa chọn hồ sơ nào');
@@ -1113,7 +1138,7 @@ admin.delete(
 /* ---------- Cấu hình hạn xử lý ---------- */
 
 admin.get('/settings/deadlines', (req, res) => {
-  res.json({ data: { ...getSettings('deadlines'), types: effectiveRules() } });
+  res.json({ data: { ...getSettings('deadlines'), types: effectiveRules(), quyTrinhKeys: QUY_TRINH_KEYS } });
 });
 
 admin.put(
@@ -1122,48 +1147,47 @@ admin.put(
     const { value, errors } = validateDeadlineSettings(req.body);
     if (errors.length) throw new HttpError(400, errors[0], errors);
     const saved = await saveSettings('deadlines', value);
-    res.json({ data: { ...saved, types: effectiveRules() } });
+    res.json({ data: { ...saved, types: effectiveRules(), quyTrinhKeys: QUY_TRINH_KEYS } });
   })
 );
 
 /**
- * Tính lại hạn cho hồ sơ CHƯA hoàn thành theo cấu hình hiện tại.
- * Hồ sơ có Ngày hẹn trả / Gia hạn giữ nguyên hạn xử lý (chỉ tính lại hạn trình LĐ).
+ * Tính lại hạn cho hồ sơ CHƯA hoàn thành theo cấu hình hiện tại: hạn các bước có cấu hình số ngày
+ * (ghi đè ngày nhập tay của bước đó), hạn trả, bước kế tiếp. Hồ sơ có Gia hạn giữ nguyên hạn trả.
  * dryRun=true: chỉ đếm số hồ sơ sẽ thay đổi.
  */
+const RECALC_FIELDS = ['hanTrinhNY', 'ngayKetThucNY', 'hanTrinhDuThao', 'hanTrinhPCThue', 'hanTrinhGCN', 'ngayHetHan', 'ngayTrinhLanhDao', 'buocKeTiep'];
+const dayOrValue = (value) => (value instanceof Date ? value.toISOString().slice(0, 10) : value ?? null);
+
 admin.post(
   '/settings/deadlines/recalculate',
   asyncHandler(async (req, res) => {
     const dryRun = req.body?.dryRun === true;
-    const open = await Dossier.find({ trangThai: { $ne: 'HOAN_THANH' } })
-      .select('maHoSo ngayVao phanLoai ngayHenTra ngayGiaHan ngayTrinhLanhDao ngayHetHan')
-      .lean();
+    const open = await Dossier.find({ trangThai: { $ne: 'HOAN_THANH' } }).lean();
 
-    const sameDay = (a, b) => (a ? new Date(a).getTime() : null) === (b ? new Date(b).getTime() : null);
     const updates = [];
-    for (const d of open) {
-      const deadlines = calculateDeadlines(d.ngayVao, d.phanLoai);
-      if (!deadlines) continue;
-      const next = { ngayTrinhLanhDao: deadlines.ngayTrinhLanhDao, ngayHetHan: d.ngayGiaHan || d.ngayHenTra || deadlines.ngayHetHan };
-      if (!sameDay(next.ngayTrinhLanhDao, d.ngayTrinhLanhDao) || !sameDay(next.ngayHetHan, d.ngayHetHan)) updates.push({ before: d, next });
+    for (const before of open) {
+      const next = applyWorkflow({ ...before }, { force: true });
+      const changes = RECALC_FIELDS.map((field) => ({ field, from: dayOrValue(before[field]), to: dayOrValue(next[field]) })).filter(
+        (c) => c.from !== c.to
+      );
+      if (changes.length) updates.push({ before, next, changes });
     }
 
     if (!dryRun && updates.length) {
-      await Dossier.bulkWrite(updates.map(({ before, next }) => ({ updateOne: { filter: { _id: before._id }, update: { $set: next } } })));
+      await Dossier.bulkWrite(
+        updates.map(({ before, next }) => ({
+          updateOne: { filter: { _id: before._id }, update: { $set: Object.fromEntries(RECALC_FIELDS.map((f) => [f, next[f] ?? null])) } },
+        }))
+      );
       await logMany(
         req.auth,
-        updates.map(({ before, next }) => ({
+        updates.map(({ before, changes }) => ({
           dossier: before._id,
           maHoSo: before.maHoSo,
           action: 'BULK_UPDATE',
           note: 'Tính lại hạn theo cấu hình mới',
-          changes: ['ngayTrinhLanhDao', 'ngayHetHan']
-            .map((field) => ({
-              field,
-              from: before[field] ? new Date(before[field]).toISOString().slice(0, 10) : null,
-              to: next[field].toISOString().slice(0, 10),
-            }))
-            .filter((c) => c.from !== c.to),
+          changes: changes.filter((c) => c.field !== 'buocKeTiep'),
         }))
       );
     }
@@ -1296,6 +1320,7 @@ importRouter.post(
           canBo: r.officer ?? r.newOfficerName,
           canBoMoi: !r.officer && Boolean(r.newOfficerName),
           trangThai: r.trangThai,
+          buoc: r.buoc,
           sheet: r.sheet,
           dong: r.dong,
         })),
@@ -1381,7 +1406,8 @@ api.use('/import', importRouter);
 /* ------------------------------------------------------------------ */
 
 const REPORT_FIELDS =
-  'maHoSo soBienNhan tenHoSo diaChi phanLoai loaiHoSoGoc ngayVao ngayTrinhLanhDao ngayTrinhThucTe lanTrinh ngayHetHan ngayKetThuc treHanTheoSo trangThai canBoThuLy ghiChuCanBo ghiChu chiDaoLanhDao mucDoUuTien';
+  'maHoSo soBienNhan tenHoSo diaChi phanLoai loaiHoSoGoc ngayVao ngayHenTra ngayGiaHan ngayTrinhLanhDao buocKeTiep ngayTrinhThucTe lanTrinh ngayHetHan ngayKetThuc treHanTheoSo trangThai buoc canBoThuLy ghiChuCanBo ghiChu chiDaoLanhDao mucDoUuTien to soGCN giaiTrinh ghiChuUuTien congNhanThemDat capGCN ' +
+  QUY_TRINH_DATE_FIELDS.join(' ');
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 const parsePeriod = (query) => {

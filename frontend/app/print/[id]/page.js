@@ -6,7 +6,16 @@ import { format, parseISO } from 'date-fns';
 import { ArrowLeft, LoaderCircle, Printer } from 'lucide-react';
 import { ACTIONS, FIELD_LABELS, displayValue } from '@/components/DossierHistory';
 import { api } from '@/lib/api';
-import { KET_QUA_TRINH_LABELS, TRANG_THAI_LABELS, formatDate, getUserName, isFieldHidden, submissionsOf } from '@/lib/dossier';
+import {
+  BUOC_KE_TIEP_LABELS,
+  BUOC_LABELS,
+  KET_QUA_TRINH_LABELS,
+  formatDate,
+  getUserName,
+  isFieldHidden,
+  submissionsOf,
+} from '@/lib/dossier';
+import { GCN_STEP_GROUPS } from '@/components/GcnStepsEditor';
 import { useAuth } from '@/lib/useAuth';
 
 function Row({ label, children }) {
@@ -102,13 +111,24 @@ export default function PrintDossierPage() {
           <tbody>
             <Row label="Tên hồ sơ / chủ hồ sơ">{dossier.tenHoSo}</Row>
             <Row label="Địa chỉ">{dossier.diaChi}</Row>
-            <Row label="Đơn vị gửi">{dossier.donViGui}</Row>
-            <Row label="Loại thủ tục">{loai}</Row>
-            <Row label="Ngày tiếp nhận">{formatDate(dossier.ngayVao)}</Row>
+            <Row label="Loại hồ sơ">
+              {loai}
+              {(dossier.capGCN || dossier.congNhanThemDat) &&
+                ` (${[dossier.capGCN && 'Cấp GCN', dossier.congNhanThemDat && 'Công nhận thêm đất'].filter(Boolean).join(', ')})`}
+            </Row>
+            <Row label="Ngày nhận / Ngày chuyển">
+              {formatDate(dossier.ngayVao)}
+              {dossier.ngayChuyen && ` / ${formatDate(dossier.ngayChuyen)}`}
+            </Row>
             <Row label="Ngày hẹn trả (biên nhận)">{optionalDate(dossier.ngayHenTra)}</Row>
             <Row label="Gia hạn đến">{optionalDate(dossier.ngayGiaHan)}</Row>
-            <Row label="Hạn trình Lãnh đạo">{optionalDate(dossier.ngayTrinhLanhDao)}</Row>
-            <Row label="Hạn xử lý">{optionalDate(dossier.ngayHetHan)}</Row>
+            <Row label="Hạn trả (gồm niêm yết)">{optionalDate(dossier.ngayHetHan)}</Row>
+            <Row label="Tình trạng">{BUOC_LABELS[dossier.buoc] ?? ''}</Row>
+            <Row label="Bước kế tiếp">
+              {dossier.buocKeTiep &&
+                `${BUOC_KE_TIEP_LABELS[dossier.buocKeTiep]}${dossier.ngayTrinhLanhDao ? ` — hạn ${formatDate(dossier.ngayTrinhLanhDao)}` : ''}`}
+            </Row>
+            {submissionsOf(dossier).length > 0 && (
             <Row label="Các lần trình Lãnh đạo">
               {submissionsOf(dossier).length > 0 && (
                 <ol className="list-decimal pl-4">
@@ -122,16 +142,40 @@ export default function PrintDossierPage() {
                 </ol>
               )}
             </Row>
+            )}
             <Row label="Ngày kết thúc">{optionalDate(dossier.ngayKetThuc)}</Row>
-            <Row label="Cán bộ thụ lý">{getUserName(dossier.canBoThuLy) || 'Chưa phân công'}</Row>
-            <Row label="Trạng thái">{TRANG_THAI_LABELS[dossier.trangThai] ?? dossier.trangThai}</Row>
+            <Row label="Cán bộ thụ lý / Tổ">
+              {getUserName(dossier.canBoThuLy) || 'Chưa phân công'}
+              {dossier.to && ` — Tổ ${dossier.to}`}
+            </Row>
             <Row label="Diễn giải / tiến độ">{dossier.ghiChuCanBo}</Row>
             <Row label="Ghi chú">{dossier.ghiChu}</Row>
+            {dossier.ghiChuUuTien && <Row label="Ghi chú ưu tiên (LĐ xem)">{dossier.ghiChuUuTien}</Row>}
+            {dossier.giaiTrinh && <Row label="Giải trình">{dossier.giaiTrinh}</Row>}
             {!isFieldHidden(dossier, 'chiDaoLanhDao') && <Row label="Chỉ đạo của Lãnh đạo">{dossier.chiDaoLanhDao}</Row>}
           </tbody>
         </table>
 
-        <h2 className="mb-1.5 mt-5 font-bold uppercase">II. Quá trình xử lý</h2>
+        <h2 className="mb-1.5 mt-5 font-bold uppercase">Các bước quy trình</h2>
+        <table className="w-full border-collapse text-[12px]">
+          <tbody>
+            {GCN_STEP_GROUPS.map((group) => (
+              <tr key={group.title} className="align-top">
+                <th scope="row" className="w-[34%] border border-slate-400 bg-slate-50 px-2.5 py-1.5 text-left font-semibold print:bg-transparent">
+                  {group.title}
+                </th>
+                <td className="border border-slate-400 px-2.5 py-1.5">
+                  {group.fields
+                    .filter((field) => dossier[field.key])
+                    .map((field) => `${field.label}: ${field.text ? dossier[field.key] : formatDate(dossier[field.key])}`)
+                    .join(' · ') || <span className="text-slate-400">—</span>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+
+        <h2 className="mb-1.5 mt-5 font-bold uppercase">II. Lịch sử thao tác</h2>
         {logs.length === 0 ? (
           <p className="italic text-slate-600">Chưa có thao tác nào được ghi nhận trong hệ thống.</p>
         ) : (

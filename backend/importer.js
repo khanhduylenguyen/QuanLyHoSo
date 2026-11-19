@@ -7,11 +7,14 @@
  * Định dạng file:
  * - Mỗi sheet (đang hiện) có một dòng tiêu đề trong 12 dòng đầu, chứa ít nhất cột "Tên hồ sơ"/"Tên"
  *   và "Ngày nhận". Các cột khác nhận theo tên (xem COLUMN_PATTERNS), thứ tự cột không quan trọng.
+ * - Sổ GCN ("DANH SÁCH GCN 2026"): các cột bước quy trình nhận theo tên cột + nhóm tiêu đề gộp ở dòng
+ *   phía trên (vd. "Ngày trình" thuộc nhóm "TRÌNH DỰ THẢO CẤP GCN") — xem GCN_COLUMNS.
  * - Nhiều sheet: hồ sơ ở các sheet sau được gộp vào hồ sơ trùng ở sheet khác theo Số biên nhận
  *   (hoặc Tên + Địa chỉ + Ngày nhận) — chỉ bổ sung ô trống. Trong cùng một sheet không gộp.
  */
 const ExcelJS = require('exceljs');
-const { User, Dossier, PHAN_LOAI_RULES, calculateDeadlines } = require('./models');
+const { User, Dossier, PHAN_LOAI_RULES } = require('./models');
+const { BUOC, applyWorkflow, statusForStep } = require('./gcn');
 const { logMany } = require('./audit');
 
 /* ------------------------------------------------------------------ */
@@ -20,14 +23,8 @@ const { logMany } = require('./audit');
 
 // Sheet đã biết của sổ theo dõi: tiền tố mã khi thiếu số biên nhận + loại mặc định khi ô Loại trống.
 // Sheet đầu tiên trong danh sách được đọc trước (làm nguồn chính).
-const KNOWN_SHEETS = [
-  { name: 'THỦ TỤC HÀNH CHÍNH - 2026', prefix: 'TTHC', defaultType: 'KHAC' },
-  { name: 'CẤP GIẤY CHỨNG NHẬN', prefix: 'GCN', defaultType: 'CAP_GCN' },
-  { name: 'CẤP PHÉP - ĐIỀU CHỈNH CẤP PHÉP', prefix: 'CPXD', defaultType: 'CAP_PHEP_XD' },
-  { name: 'TỔNG - XÁC NHẬN TÌNH TRẠNG NHÀ', prefix: 'XNN', defaultType: 'XAC_NHAN_NHA' },
-  { name: 'TỔNG - KÊ KHAI THUẾ', prefix: 'KKT', defaultType: 'KE_KHAI_THUE' },
-];
-const DEFAULT_SHEET_CONFIG = { prefix: 'HS', defaultType: 'KHAC' };
+const KNOWN_SHEETS = [{ name: 'CẤP GIẤY CHỨNG NHẬN', prefix: 'GCN', defaultType: 'CAP_GCN' }];
+const DEFAULT_SHEET_CONFIG = { prefix: 'GCN', defaultType: 'CAP_GCN' };
 const HEADER_SCAN_ROWS = 12;
 
 // Cột logic → tiêu đề (đã bỏ dấu, viết hoa). Thứ tự trong mảng = mức ưu tiên.
@@ -52,24 +49,62 @@ const COLUMN_PATTERNS = {
   tinhTrang: [/^TRANG THAI HO SO$/, /^TRANG THAI$/, /^X$/],
 };
 
-// Loại hồ sơ: thứ tự quan trọng (RÚT trước, CÔNG NHẬN THÊM trước GCN, THI CÔNG trước GIẤY PHÉP…).
+/**
+ * Cột quy trình của sổ GCN: các cách nhận [nhóm tiêu đề gộp ở dòng trên (null = không cần), tên cột],
+ * thử theo thứ tự. Sổ thật cần nhóm vì nhiều cột trùng tên ("Hạn trình", "Ngày trình", "TRÌNH UB");
+ * file mẫu (không có dòng nhóm) dùng tên cột đầy đủ.
+ */
+const GCN_COLUMNS = {
+  ghiChuUuTien: [[null, /^GHI CHU UU TIEN/]],
+  congNhanThem: [[null, /^CONG NHAN THEM DAT$/]],
+  capGcnX: [[null, /^CAP GCN$/]],
+  to: [[null, /^TO$/]],
+  hanTrinhNY: [[null, /^HAN TRINH NY/]],
+  ngayTrinhNY: [[null, /^NGAY TRINH NY/]],
+  ngayBatDauNY: [[null, /^NGAY BAT DAU NY/]],
+  ngayKetThucNY: [[null, /^NGAY KET THUC NY/]],
+  hanTrinhDuThao: [[/^TRINH DU THAO/, /^HAN TRINH$/], [null, /^HAN TRINH DU THAO/]],
+  ngayTrinhDuThao: [[/^TRINH DU THAO/, /^NGAY TRINH$/], [null, /^NGAY TRINH DU THAO/]],
+  hanTrinhPCThue: [[null, /^HAN TRINH PC THUE/]],
+  ngayTrinhPCThue: [[null, /^NGAY TRINH PC THUE/]],
+  ngayDiThue: [[null, /^DI THUE/]],
+  ngayNhanKQNVTC: [[null, /^NHAN KET QUA/]],
+  hanTrinhGCN: [[null, /^HAN TRINH GCN/]],
+  ngayTrinhGCN: [[/^CAP GCN/, /^NGAY TRINH UB$/], [null, /^NGAY TRINH UB CAP GCN/]],
+  soGCN: [[null, /^SO GCN$/]],
+  ngayTrinhRut: [[/RUT/, /^TRINH UB$/], [null, /^NGAY TRINH UB RUT/]],
+  ngayVBRut: [[/RUT/, /^NGAY VB$/], [null, /^NGAY VB RUT/]],
+  ngayTraTo: [[null, /^NGAY TRA TO$/]],
+  // Sổ thật: cột "Đã GIẢI QUYẾT" (cột "Tình trạng" phía sau là công thức đếm ngày); file mẫu: "Tình trạng".
+  tinhTrangGcn: [[null, /^DA GIAI QUYET$/], [null, /^TINH TRANG$/]],
+  giaiTrinh: [[null, /^GIAI TRINH$/]],
+  hanTrinhLaiUB: [[null, /^HAN TRINH LAI UB$/]],
+};
+const GCN_DATE_COLUMNS = [
+  'hanTrinhNY', 'ngayTrinhNY', 'ngayBatDauNY', 'ngayKetThucNY', 'hanTrinhDuThao', 'ngayTrinhDuThao',
+  'hanTrinhPCThue', 'ngayTrinhPCThue', 'ngayDiThue', 'ngayNhanKQNVTC', 'hanTrinhGCN', 'ngayTrinhGCN',
+  'ngayTrinhRut', 'ngayVBRut', 'ngayTraTo', 'hanTrinhLaiUB',
+];
+
+/** Bước quy trình từ cột "Tình trạng" của sổ GCN (thứ tự quan trọng: DỰ THẢO trước CẤP GCN…). */
+const STEP_RULES = [
+  [/DA GIAI QUYET|HOAN THANH/, 'DA_GIAI_QUYET'],
+  [/\bRUT\b/, 'TRINH_RUT'],
+  [/TRINH UB.*NIEM YET/, 'TRINH_NY'],
+  [/DU THAO/, 'TRINH_DU_THAO'],
+  [/TRINH UB.*CAP GCN/, 'TRINH_CAP_GCN'],
+  [/NIEM YET/, 'NIEM_YET'],
+  [/CHO HOP/, 'CHO_HOP'],
+  [/GIAI TRINH/, 'TRA_GIAI_TRINH'],
+  [/THUE/, 'THUE'],
+  [/TRINH UB/, 'TRINH_UB'],
+];
+
+// Loại hồ sơ GCN: thứ tự quan trọng (CÔNG NHẬN THÊM trước GCN). Ô trống → loại mặc định của sheet.
 const TYPE_RULES = [
-  [/\bRUT\b/, 'RUT_HO_SO'],
   [/CONG NHAN THEM/, 'CONG_NHAN_THEM_DAT'],
   [/DINH CHINH/, 'DINH_CHINH_GCN'],
-  [/THI CONG|DUONG BO/, 'THI_CONG_DUONG_BO'],
   [/GIAY CHUNG NHAN|\bGCN\b/, 'CAP_GCN'],
-  [/GIA HAN/, 'GIA_HAN_GPXD'],
-  [/DIEU CHINH/, 'DIEU_CHINH_GPXD'],
-  [/SUA CHUA|CAI TAO/, 'SUA_CHUA_CAI_TAO'],
-  [/CAP PHEP/, 'CAP_PHEP_XD'],
-  [/XAC NHAN TINH TRANG NHA/, 'XAC_NHAN_NHA'],
-  [/KE KHAI THUE/, 'KE_KHAI_THUE'],
-  [/SO NHA/, 'CAP_DOI_SO_NHA'],
-  [/QUY HOACH/, 'THONG_TIN_QUY_HOACH'],
-  [/KHOI CONG/, 'THONG_BAO_KHOI_CONG'],
-  [/NIEM YET/, 'NIEM_YET'],
-  [/HOA GIAI|TRANH CHAP/, 'HOA_GIAI_DAT_DAI'],
 ];
 
 /**
@@ -113,21 +148,44 @@ const OFFICER_ALIASES = {
 const OFFICER_NOISE = new Set(['A', 'C', 'CHI', 'ANH', 'CHUYEN', 'DOI', 'NOP', 'THEM', 'VA']);
 
 // Cột trong file mẫu (theo đúng tên tiêu đề mà bộ đọc nhận ra).
+// File mẫu theo cột của sổ "DANH SÁCH GCN 2026" (tên cột đầy đủ để nhận được khi không có dòng nhóm).
 const TEMPLATE_COLUMNS = [
   { header: 'STT', width: 6 },
   { header: 'Ngày nhận', width: 13, date: true, required: true },
+  { header: 'Ngày chuyển', width: 13, date: true },
+  { header: 'GHI CHÚ (ƯU TIÊN) (Lãnh đạo xem)', width: 22 },
   { header: 'Số biên nhận', width: 24 },
   { header: 'Tên hồ sơ', width: 30, required: true },
   { header: 'Địa chỉ', width: 30 },
-  { header: 'Loại hồ sơ', width: 32, list: 'types' },
+  { header: 'Loại hồ sơ', width: 28, list: 'types' },
+  { header: 'Công nhận thêm đất', width: 10 },
+  { header: 'Cấp GCN', width: 9 },
   { header: 'CBTL', width: 18, list: 'officers' },
+  { header: 'TỔ', width: 9 },
   { header: 'Ngày hẹn trả (theo BN)', width: 14, date: true },
   { header: 'Gia hạn (nếu có)', width: 14, date: true },
   { header: 'Kết thúc Quy trình (ĐÁNH X)', width: 12 },
-  { header: 'Ngày trình VPUB', width: 22 },
-  { header: 'Ngày kết thúc', width: 14, date: true },
+  { header: 'Hạn trình NY lên UB', width: 14, date: true },
+  { header: 'Ngày trình NY VPUB', width: 14, date: true },
+  { header: 'Ngày bắt đầu NY', width: 14, date: true },
+  { header: 'Ngày kết thúc NY', width: 14, date: true },
+  { header: 'Hạn trình dự thảo GCN', width: 14, date: true },
+  { header: 'Ngày trình dự thảo GCN', width: 14, date: true },
+  { header: 'Hạn trình PC thuế', width: 14, date: true },
+  { header: 'Ngày trình PC thuế VPUB', width: 14, date: true },
+  { header: 'Đi thuế', width: 14, date: true },
+  { header: 'Nhận kết quả đã thực hiện NVTC', width: 14, date: true },
+  { header: 'Hạn trình GCN', width: 14, date: true },
+  { header: 'Ngày trình UB cấp GCN', width: 14, date: true },
+  { header: 'Số GCN', width: 14 },
+  { header: 'Ngày trình UB rút / điều chỉnh', width: 14, date: true },
+  { header: 'Ngày VB rút / điều chỉnh', width: 14, date: true },
+  { header: 'Ngày trả tổ', width: 14, date: true },
+  { header: 'Tình trạng', width: 22, list: 'steps' },
   { header: 'Diễn giải', width: 40 },
   { header: 'GHI CHÚ', width: 24 },
+  { header: 'GIẢI TRÌNH', width: 24 },
+  { header: 'HẠN TRÌNH LẠI UB', width: 14, date: true },
 ];
 
 /* ------------------------------------------------------------------ */
@@ -281,6 +339,18 @@ function registerLateFlag(r) {
   return r.hasLateColumn ? false : undefined;
 }
 
+/** Bước quy trình: sổ GCN theo cột Tình trạng, sổ khác suy từ trạng thái. */
+function deriveStep(r) {
+  if (isMarked(r.ketThucX)) return 'DA_GIAI_QUYET';
+  const key = fold(r.tinhTrangGcn);
+  if (key) return STEP_RULES.find(([pattern]) => pattern.test(key))?.[1] ?? null;
+  if (!r.isGcnLayout) {
+    const status = deriveStatus(r);
+    return status === 'HOAN_THANH' ? 'DA_GIAI_QUYET' : status === 'CHO_LANH_DAO_DUYET' ? 'TRINH_UB' : 'DANG_THU_LY';
+  }
+  return 'DANG_THU_LY';
+}
+
 function deriveStatus(r) {
   if (isMarked(r.ketThucX) || r.ngayKetThuc || isMarked(r.ketThucRaw) || /DA GIAI QUYET|HOAN THANH|DA TRA/.test(fold(r.tinhTrang))) {
     return 'HOAN_THANH';
@@ -318,14 +388,43 @@ function findHeader(ws) {
         }
       }
     }
-    if (columns.ten && columns.ngayNhan) return { headerRow: rowNumber, columns };
+    if (columns.ten && columns.ngayNhan) {
+      // Nhóm tiêu đề gộp ở dòng ngay trên (ô gộp trả về giá trị của ô đầu).
+      const groups = {};
+      if (rowNumber > 1) {
+        ws.getRow(rowNumber - 1).eachCell((cell, col) => {
+          const group = fold(cellValue(cell));
+          if (group) groups[col] = group;
+        });
+      }
+      const gcn = {};
+      for (const [field, options] of Object.entries(GCN_COLUMNS)) {
+        for (const [groupPattern, titlePattern] of options) {
+          const col = Object.keys(titles).find(
+            (c) => titlePattern.test(titles[c]) && (!groupPattern || groupPattern.test(groups[c] ?? ''))
+          );
+          if (col) {
+            gcn[field] = Number(col);
+            break;
+          }
+        }
+      }
+      // Sổ GCN: các cột "Ngày trình UB" / "TRÌNH UB" là của từng bước, không phải ngày trình LĐ chung.
+      if (gcn.ngayBatDauNY) {
+        delete columns.trinhLD;
+        delete columns.trinhVPUB;
+      }
+      return { headerRow: rowNumber, columns, gcn };
+    }
   }
   return null;
 }
 
 function readSheet(ws, sheetConfig, header, issues) {
-  const { headerRow, columns } = header;
+  const { headerRow, columns, gcn = {} } = header;
   const get = (row, field) => (columns[field] ? cellValue(row.getCell(columns[field])) : null);
+  const getGcn = (row, field) => (gcn[field] ? cellValue(row.getCell(gcn[field])) : null);
+  const isGcnLayout = Boolean(gcn.ngayBatDauNY);
   const records = [];
   let previousYear = null;
 
@@ -380,7 +479,24 @@ function readSheet(ws, sheetConfig, header, issues) {
       cbtlRaw: isMarked(get(row, 'cbtl')) ? String(get(row, 'cbtl')) : '',
       ghiChuCanBo: isMarked(get(row, 'dienGiai')) ? String(get(row, 'dienGiai')) : '',
       ghiChu: isMarked(get(row, 'ghiChu')) ? String(get(row, 'ghiChu')) : '',
+      isGcnLayout,
+      ngayChuyen: fixYear(toDate(get(row, 'ngayChuyen'))),
+      ...Object.fromEntries(GCN_DATE_COLUMNS.map((field) => [field, fixYear(toDate(getGcn(row, field), 'last'))])),
+      tinhTrangGcn: getGcn(row, 'tinhTrangGcn'),
+      to: isMarked(getGcn(row, 'to')) ? String(getGcn(row, 'to')) : '',
+      soGCN: isMarked(getGcn(row, 'soGCN')) ? String(getGcn(row, 'soGCN')) : '',
+      giaiTrinh: isMarked(getGcn(row, 'giaiTrinh')) ? String(getGcn(row, 'giaiTrinh')) : '',
+      ghiChuUuTien: isMarked(getGcn(row, 'ghiChuUuTien')) ? String(getGcn(row, 'ghiChuUuTien')) : '',
+      congNhanThemDat: isMarked(getGcn(row, 'congNhanThem')),
+      capGCN: isMarked(getGcn(row, 'capGcnX')),
     };
+    // Ô ngày gõ sai (vd. "10//9/2026") → báo để người nhập kiểm tra.
+    for (const field of GCN_DATE_COLUMNS) {
+      const raw = getGcn(row, field);
+      if (isMarked(raw) && !record[field] && typeof raw === 'string') {
+        issues.push({ sheet: ws.name, dong, message: `Không đọc được ngày ở cột ${field}`, value: String(raw) });
+      }
+    }
     if (record.phanLoai === 'KHAC' && record.loaiHoSoGoc) {
       issues.push({ sheet: ws.name, dong, message: 'Loại hồ sơ không khớp loại chuẩn → Thủ tục khác', value: record.loaiHoSoGoc });
     }
@@ -513,7 +629,15 @@ async function analyzeImport(workbook, { useDb = true, skipExisting = true } = {
     if (r.cbtlRaw && !officer.newName && (officer.ambiguous || !officer.primary)) {
       r.ghiChu = [r.ghiChu, `CBTL trong file: ${r.cbtlRaw}`].filter(Boolean).join(' | ');
     }
-    r.trangThai = deriveStatus(r);
+    const step = deriveStep(r);
+    if (step === null) issues.push({ sheet: r.sheet, dong: r.dong, message: 'Không nhận ra tình trạng → Đang thụ lý', value: r.tinhTrangGcn });
+    r.buoc = step ?? 'DANG_THU_LY';
+    r.trangThai = statusForStep(r.buoc, Boolean(r.officer || r.newOfficerName));
+    if (r.isGcnLayout) {
+      // Ngày trình gần nhất + ngày kết thúc (hồ sơ đã giải quyết: ngày văn bản rút / trình cấp GCN).
+      r.ngayTrinhThucTe = latest(r.ngayTrinhNY, r.ngayTrinhDuThao, r.ngayTrinhPCThue, r.ngayTrinhGCN, r.ngayTrinhRut);
+      if (r.buoc === 'DA_GIAI_QUYET') r.ngayKetThuc = r.ngayKetThuc || latest(r.ngayVBRut, r.ngayTrinhGCN);
+    }
   }
 
   const countBy = (key) =>
@@ -612,8 +736,7 @@ async function commitImport(records, { batchId, fileName, createNewOfficers = fa
   }
 
   const docs = records.map((r) => {
-    const deadlines = calculateDeadlines(r.ngayVao, r.phanLoai);
-    return {
+    const doc = {
       maHoSo: r.maHoSo,
       soBienNhan: r.soBienNhan,
       tenHoSo: r.tenHoSo,
@@ -623,8 +746,15 @@ async function commitImport(records, { batchId, fileName, createNewOfficers = fa
       ngayVao: r.ngayVao,
       ngayHenTra: r.ngayHenTra,
       ngayGiaHan: r.ngayGiaHan,
-      ngayTrinhLanhDao: deadlines.ngayTrinhLanhDao,
-      ngayHetHan: r.ngayGiaHan || r.ngayHenTra || deadlines.ngayHetHan,
+      ngayChuyen: r.ngayChuyen ?? null,
+      ...Object.fromEntries(GCN_DATE_COLUMNS.map((field) => [field, r[field] ?? null])),
+      buoc: r.buoc,
+      to: r.to ?? '',
+      soGCN: r.soGCN ?? '',
+      giaiTrinh: r.giaiTrinh ?? '',
+      ghiChuUuTien: r.ghiChuUuTien ?? '',
+      congNhanThemDat: Boolean(r.congNhanThemDat),
+      capGCN: Boolean(r.capGCN),
       ngayTrinhThucTe: r.ngayTrinhThucTe,
       lanTrinh: r.lanTrinh ?? [],
       ngayKetThuc: r.ngayKetThuc,
@@ -635,6 +765,8 @@ async function commitImport(records, { batchId, fileName, createNewOfficers = fa
       trangThai: r.trangThai,
       nguonNhap: { tep: fileName, lanNhap: batchId, sheet: r.sheet, dong: r.dong },
     };
+    // Hạn trả, hạn các bước còn trống, bước kế tiếp — ngày có trong file giữ nguyên.
+    return applyWorkflow(doc, { explicit: (field) => doc[field] !== null && doc[field] !== undefined });
   });
 
   let inserted = 0;
@@ -664,6 +796,7 @@ async function commitImport(records, { batchId, fileName, createNewOfficers = fa
 async function buildTemplate() {
   const officers = await User.find({ role: 'CAN_BO', isActive: { $ne: false } }).select('hoTen').sort({ hoTen: 1 }).lean();
   const types = Object.values(PHAN_LOAI_RULES).map((rule) => rule.moTa);
+  const steps = Object.values(BUOC);
 
   const wb = new ExcelJS.Workbook();
   wb.creator = 'Hệ thống Quản lý Hồ sơ';
@@ -682,7 +815,12 @@ async function buildTemplate() {
   const lists = wb.addWorksheet('DanhMuc', { state: 'hidden' });
   types.forEach((t, i) => (lists.getCell(i + 1, 1).value = t));
   officers.forEach((o, i) => (lists.getCell(i + 1, 2).value = o.hoTen));
-  const listRef = { types: `DanhMuc!$A$1:$A$${types.length}`, officers: `DanhMuc!$B$1:$B$${Math.max(officers.length, 1)}` };
+  steps.forEach((t, i) => (lists.getCell(i + 1, 3).value = t));
+  const listRef = {
+    types: `DanhMuc!$A$1:$A$${types.length}`,
+    officers: `DanhMuc!$B$1:$B$${Math.max(officers.length, 1)}`,
+    steps: `DanhMuc!$C$1:$C$${steps.length}`,
+  };
 
   const ROWS = 500;
   TEMPLATE_COLUMNS.forEach((col, i) => {
@@ -710,14 +848,15 @@ async function buildTemplate() {
     ['Ngày', 'Nhập dạng dd/mm/yyyy (vd. 05/01/2026).'],
     ['Loại hồ sơ', 'Chọn trong danh sách. Ghi theo tên thủ tục khác cũng được, hệ thống tự gộp về loại gần nhất.'],
     ['CBTL', 'Chọn cán bộ trong danh sách. Tên mới chưa có tài khoản: khi xem trước có thể chọn tạo tài khoản (chưa có mật khẩu) hoặc để Chưa phân công.'],
-    ['Ngày hẹn trả / Gia hạn', 'Để trống thì hạn xử lý = Ngày nhận + hạn mặc định của loại thủ tục.'],
-    ['Kết thúc Quy trình', 'Đánh "x" nếu hồ sơ đã giải quyết xong.'],
-    ['Ngày trình VPUB', 'Trình nhiều lần thì ghi các ngày cách nhau bởi dấu phẩy (vd. 05/03/2026, 12/03/2026) — mỗi ngày là một lần trình.'],
+    ['Ngày hẹn trả / Gia hạn', 'Để trống thì hạn trả = Ngày nhận + hạn mặc định của loại hồ sơ; loại có niêm yết cộng thêm thời gian niêm yết.'],
+    ['Kết thúc Quy trình', 'Đánh "x" nếu hồ sơ đã giải quyết xong (hoặc chọn Tình trạng "Đã giải quyết").'],
+    ['Các cột hạn (Hạn trình …)', 'Để trống thì hệ thống tự tính theo Quản trị → Cấu hình hạn (vd. hạn trình niêm yết = Ngày nhận + 8 ngày làm việc).'],
+    ['Tình trạng', 'Bước hiện tại của hồ sơ — chọn trong danh sách.'],
     ['Trùng hồ sơ', 'Hồ sơ đã có trong hệ thống (cùng Tên + Địa chỉ + Ngày nhận, hoặc cùng Số biên nhận + Tên) được bỏ qua.'],
-    ['Có thể tải lên sổ cũ', 'Hệ thống cũng đọc được sổ theo dõi nhiều sheet (tiêu đề ở dòng bất kỳ trong 12 dòng đầu).'],
+    ['Tải lên sổ GCN', 'Có thể tải thẳng file "DANH SÁCH GCN" (Google Sheets → Tệp → Tải xuống → .xlsx).'],
     ['', ''],
-    ['Loại thủ tục', 'Hạn mặc định'],
-    ...Object.values(PHAN_LOAI_RULES).map((rule) => [rule.moTa, `${rule.hetHan} ngày`]),
+    ['Loại hồ sơ', 'Hạn trả mặc định'],
+    ...Object.values(PHAN_LOAI_RULES).map((rule) => [rule.moTa, `${rule.hetHan} ngày${rule.niemYet ? ' + niêm yết' : ''}`]),
   ].forEach((row) => guide.addRow(row));
   guide.getRow(1).font = { bold: true, size: 14 };
   guide.getRow(13).font = { bold: true };

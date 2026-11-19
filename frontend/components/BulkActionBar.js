@@ -1,7 +1,7 @@
 'use client';
 
 import { CircleCheck, FileDown, LoaderCircle, Trash2, UserCog, X } from 'lucide-react';
-import { TRANG_THAI_LABELS, getUserName } from '@/lib/dossier';
+import { BUOC_LABELS, getUserName } from '@/lib/dossier';
 
 const selectClass =
   'rounded-lg border border-indigo-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-indigo-900 focus:outline-none focus:ring-2 focus:ring-indigo-400 disabled:opacity-50';
@@ -40,18 +40,18 @@ export default function BulkActionBar({
         className="flex items-center gap-1 rounded-lg bg-emerald-600 px-3 py-1.5 font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
       >
         {busy ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <CircleCheck className="h-3.5 w-3.5" />}
-        Hoàn thành
+        Đã giải quyết
       </button>
 
       <select
         value=""
-        onChange={(event) => event.target.value && onUpdate({ trangThai: event.target.value }, `Đổi trạng thái → ${TRANG_THAI_LABELS[event.target.value]}`)}
+        onChange={(event) => event.target.value && onUpdate({ buoc: event.target.value }, `Đổi tình trạng → ${BUOC_LABELS[event.target.value]}`)}
         disabled={busy}
-        aria-label="Đổi trạng thái các hồ sơ đã chọn"
+        aria-label="Đổi tình trạng các hồ sơ đã chọn"
         className={selectClass}
       >
-        <option value="">Đổi trạng thái…</option>
-        {Object.entries(TRANG_THAI_LABELS).map(([value, label]) => (
+        <option value="">Đổi tình trạng…</option>
+        {Object.entries(BUOC_LABELS).map(([value, label]) => (
           <option key={value} value={value}>
             {label}
           </option>

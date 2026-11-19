@@ -1,4 +1,8 @@
-# Hệ thống Quản lý & Theo dõi Hồ sơ
+# Hệ thống Quản lý & Theo dõi Hồ sơ Cấp Giấy chứng nhận (GCN)
+
+Chỉ quản lý hồ sơ GCN theo sổ **"DANH SÁCH GCN 2026"** (Cấp GCN, Công nhận thêm đất, Đính chính GCN), theo từng bước:
+niêm yết → trình dự thảo cấp GCN → thuế → trình UB cấp GCN (nhánh: rút / điều chỉnh, trả giải trình). Các loại thủ tục khác
+có hạn cố định nên không quản lý ở đây.
 
 | Phần      | Công nghệ                                                          | Port |
 |-----------|--------------------------------------------------------------------|------|
@@ -47,16 +51,23 @@ Tài khoản do `npm run seed` tạo, mật khẩu chung là `SEED_PASSWORD` (m�
 - **Quên mật khẩu** (trang đăng nhập): nhập tên đăng nhập hoặc email → gửi link `/reset-password` (hết hạn sau 30 phút,
   dùng 1 lần) tới email của tài khoản. Cần SMTP và `APP_URL` đúng địa chỉ web; tài khoản không có email thì nhờ Admin đặt lại.
 
-## Loại thủ tục & hạn xử lý
+## Quy trình GCN & cách tính hạn
 
-17 loại thủ tục thật (Cấp phép xây dựng, Cấp GCN, Xác nhận tình trạng nhà, Kê khai thuế…) — danh mục ở `backend/catalog.js`.
-Hạn xử lý của một hồ sơ = **Gia hạn** → **Ngày hẹn trả (biên nhận)** → **Ngày vào + số ngày của loại**.
+Danh mục bước ở `backend/gcn.js`, loại hồ sơ ở `backend/catalog.js`.
 
-**Quản trị → Cấu hình hạn** (lưu trong collection `settings`, xem `backend/settings.js`):
-- Số ngày trình LĐ / hạn xử lý cho từng loại.
-- Tính theo **ngày làm việc** (mặc định bật): bỏ ngày nghỉ trong tuần (mặc định T7, CN) và ngày lễ.
-  Ngày lễ dương lịch cố định có sẵn; **Tết Nguyên đán, Giỗ Tổ, ngày nghỉ bù phải tự thêm** mỗi năm.
-- Cấu hình áp dụng cho hồ sơ tiếp nhận / sửa sau khi lưu; nút **Tính lại hạn** áp dụng cho hồ sơ chưa hoàn thành.
+- **Tình trạng** (cột "Tình trạng" của sổ): Đang thụ lý, Trình UB niêm yết, Đang niêm yết, Thụ lý chờ họp, Trình dự thảo cấp GCN,
+  Thuế, Trình UB cấp GCN, Trình UB, Trình UB rút / điều chỉnh, Trả giải trình, Đã giải quyết. Trạng thái chung tự theo tình trạng.
+- **Hạn trả** = Gia hạn → (Ngày hẹn trả theo BN, hoặc Ngày nhận + hạn của loại) **+ 15 ngày niêm yết** (loại có niêm yết).
+- **Hạn từng bước** (Quản trị → Cấu hình hạn → *Số ngày từng bước*):
+  - Hạn trình niêm yết = Ngày nhận + **8 ngày làm việc** (như công thức `WORKDAY` trong sổ).
+  - Ngày kết thúc niêm yết = Ngày bắt đầu NY + **15 ngày**.
+  - Hạn trình dự thảo (từ ngày kết thúc NY), hạn trình phiếu chuyển thuế (từ ngày trình dự thảo), hạn trình GCN (từ ngày nhận
+    kết quả NVTC): **để trống = chưa quy định**, bước đó chỉ ghi ngày tay. Điền số ngày rồi bấm *Tính lại hạn* để áp dụng.
+  - Ô hạn nhập tay (hoặc có trong file) được giữ nguyên; để trống thì tự tính khi lưu.
+- **Hạn bước tiếp** (cột trong bảng, thẻ "Hạn trình bước tiếp ≤ 2 ngày", email nhắc hạn) = hạn của bước chưa làm gần nhất.
+- Tính theo **ngày làm việc** (mặc định bật): bỏ T7, CN và ngày lễ. **Tết Nguyên đán, Giỗ Tổ, ngày nghỉ bù phải tự thêm** mỗi năm.
+- Nhập sổ: Google Sheets → Tệp → Tải xuống → .xlsx → **Nhập từ Excel**. Cột trùng tên ("Hạn trình", "Ngày trình", "TRÌNH UB")
+  được nhận theo nhóm tiêu đề gộp phía trên (NIÊM YẾT / TRÌNH DỰ THẢO / THUẾ / CẤP GCN / HỒ SƠ RÚT). Hồ sơ đã có được bỏ qua.
 
 ## Thao tác & theo dõi
 

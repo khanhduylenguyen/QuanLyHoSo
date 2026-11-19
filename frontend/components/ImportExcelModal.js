@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 import Modal from '@/components/admin/Modal';
 import { api } from '@/lib/api';
-import { TRANG_THAI_LABELS, phanLoaiStyle } from '@/lib/dossier';
+import { BUOC_LABELS, TRANG_THAI_LABELS, phanLoaiStyle } from '@/lib/dossier';
 import { saveBlob } from '@/lib/download';
 
 // Cùng ngưỡng với backend (UNDO_CONFIRM_MIN): lần nhập từ ngần này hồ sơ phải gõ lại số lượng khi hoàn tác.
@@ -429,7 +429,7 @@ export default function ImportExcelModal({ open, onClose, onImported, pushToast 
                               <span className="text-amber-600">Chưa phân công</span>
                             )}
                           </td>
-                          <td className="px-3 py-1.5">{TRANG_THAI_LABELS[r.trangThai] ?? r.trangThai}</td>
+                          <td className="px-3 py-1.5">{BUOC_LABELS[r.buoc] ?? TRANG_THAI_LABELS[r.trangThai] ?? r.trangThai}</td>
                         </tr>
                       ))}
                     </tbody>

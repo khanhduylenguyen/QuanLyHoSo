@@ -15,7 +15,7 @@ export const ROLE_DESCRIPTIONS = {
   VAN_THU:
     'Tiếp nhận hồ sơ: nhập mới, sửa Ngày vào & Phân loại (hệ thống tự tính lại hạn), phân công cán bộ.',
   CAN_BO:
-    'Phân quyền dòng & cột: chỉ thấy hồ sơ được phân công, chỉ cập nhật Trạng thái, Ghi chú tiến độ & Các lần trình. Cột nhạy cảm bị giới hạn.',
+    'Phân quyền dòng & cột: chỉ thấy hồ sơ được phân công, cập nhật Tình trạng, ngày từng bước, tiến độ & Các lần trình. Cột nhạy cảm bị giới hạn.',
 };
 
 export const TRANG_THAI_LABELS = {
@@ -46,6 +46,44 @@ export const submissionsOf = (record) => {
   return record?.ngayTrinhThucTe ? [{ ngay: record.ngayTrinhThucTe, ketQua: '', ghiChu: '' }] : [];
 };
 
+// Bước quy trình GCN (cột "Tình trạng" của sổ) — cùng danh sách với backend/gcn.js (API /meta trả nhãn).
+export const BUOC_LABELS = {
+  DANG_THU_LY: 'Đang thụ lý',
+  TRINH_NY: 'Trình UB niêm yết',
+  NIEM_YET: 'Đang niêm yết',
+  CHO_HOP: 'Thụ lý chờ họp',
+  TRINH_DU_THAO: 'Trình dự thảo cấp GCN',
+  THUE: 'Thuế',
+  TRINH_CAP_GCN: 'Trình UB cấp GCN',
+  TRINH_UB: 'Trình UB',
+  TRINH_RUT: 'Trình UB rút / điều chỉnh',
+  TRA_GIAI_TRINH: 'Trả giải trình',
+  DA_GIAI_QUYET: 'Đã giải quyết',
+};
+
+export const BUOC_STYLES = {
+  DANG_THU_LY: 'bg-sky-50 text-sky-700 border-sky-200',
+  TRINH_NY: 'bg-violet-50 text-violet-700 border-violet-200',
+  NIEM_YET: 'bg-amber-50 text-amber-800 border-amber-200',
+  CHO_HOP: 'bg-slate-100 text-slate-700 border-slate-300',
+  TRINH_DU_THAO: 'bg-violet-50 text-violet-700 border-violet-200',
+  THUE: 'bg-orange-50 text-orange-700 border-orange-200',
+  TRINH_CAP_GCN: 'bg-violet-50 text-violet-700 border-violet-200',
+  TRINH_UB: 'bg-violet-50 text-violet-700 border-violet-200',
+  TRINH_RUT: 'bg-rose-50 text-rose-700 border-rose-200',
+  TRA_GIAI_TRINH: 'bg-rose-50 text-rose-700 border-rose-200',
+  DA_GIAI_QUYET: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+};
+
+// Bước kế tiếp cần trình (hạn của nó = ngayTrinhLanhDao).
+export const BUOC_KE_TIEP_LABELS = {
+  NY: 'Trình niêm yết',
+  DU_THAO: 'Trình dự thảo GCN',
+  PC_THUE: 'Trình phiếu chuyển thuế',
+  GCN: 'Trình cấp GCN',
+  TRINH_LAI: 'Trình lại UB',
+};
+
 export const TRANG_THAI_STYLES = {
   MOI_TIEP_NHAN: 'bg-slate-100 text-slate-700 border-slate-300',
   DANG_XU_LY: 'bg-sky-50 text-sky-700 border-sky-200',
@@ -55,22 +93,9 @@ export const TRANG_THAI_STYLES = {
 
 // Màu badge cho loại thủ tục: nhóm theo lĩnh vực, loại lạ dùng màu xám.
 const PHAN_LOAI_STYLES = {
-  CAP_PHEP_XD: 'bg-sky-50 text-sky-700 border-sky-200',
-  DIEU_CHINH_GPXD: 'bg-sky-50 text-sky-700 border-sky-200',
-  GIA_HAN_GPXD: 'bg-sky-50 text-sky-700 border-sky-200',
-  SUA_CHUA_CAI_TAO: 'bg-cyan-50 text-cyan-700 border-cyan-200',
-  THONG_BAO_KHOI_CONG: 'bg-cyan-50 text-cyan-700 border-cyan-200',
-  THI_CONG_DUONG_BO: 'bg-cyan-50 text-cyan-700 border-cyan-200',
   CAP_GCN: 'bg-purple-50 text-purple-700 border-purple-200',
-  CONG_NHAN_THEM_DAT: 'bg-purple-50 text-purple-700 border-purple-200',
-  DINH_CHINH_GCN: 'bg-purple-50 text-purple-700 border-purple-200',
-  NIEM_YET: 'bg-purple-50 text-purple-700 border-purple-200',
-  XAC_NHAN_NHA: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-  CAP_DOI_SO_NHA: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-  KE_KHAI_THUE: 'bg-amber-50 text-amber-800 border-amber-200',
-  THONG_TIN_QUY_HOACH: 'bg-indigo-50 text-indigo-700 border-indigo-200',
-  HOA_GIAI_DAT_DAI: 'bg-orange-50 text-orange-700 border-orange-200',
-  RUT_HO_SO: 'bg-rose-50 text-rose-700 border-rose-200',
+  CONG_NHAN_THEM_DAT: 'bg-teal-50 text-teal-700 border-teal-200',
+  DINH_CHINH_GCN: 'bg-sky-50 text-sky-700 border-sky-200',
 };
 
 export const phanLoaiStyle = (code) => PHAN_LOAI_STYLES[code] ?? 'bg-slate-50 text-slate-700 border-slate-200';
@@ -98,10 +123,11 @@ export function addDeadlineDays(start, days, calendar) {
 export const dayUnit = (calendar) => (calendar?.useWorkingDays ? 'ngày làm việc' : 'ngày');
 
 /** Nguồn của hạn xử lý: gia hạn / biên nhận / mặc định theo loại. */
-export const deadlineSource = (record) => {
+/** Nguồn của hạn trả (ghi chú nhỏ dưới ngày). niemYet: loại hồ sơ có cộng thời gian niêm yết. */
+export const deadlineSource = (record, niemYet) => {
   if (record.ngayGiaHan) return 'gia hạn';
-  if (record.ngayHenTra) return 'theo biên nhận';
-  return null;
+  const base = record.ngayHenTra ? 'hẹn trả theo BN' : 'ngày nhận + hạn của loại';
+  return niemYet ? `${base} + niêm yết` : base;
 };
 
 export const MUC_DO_UU_TIEN_LABELS = {
@@ -145,7 +171,6 @@ export const daysFromToday = (value, now = new Date()) => {
 };
 
 const isDone = (record) => record.trangThai === 'HOAN_THANH';
-const isSubmitted = (record) => record.trangThai === 'CHO_LANH_DAO_DUYET' || isDone(record);
 
 /**
  * Trạng thái hạn theo ngày lịch:
@@ -165,18 +190,24 @@ export function getDeadlineStatus(record) {
   return { status: 'normal', daysLeft };
 }
 
-/** Trạng thái hạn trình lãnh đạo. 'returned' = lần trình gần nhất bị trả lại, cần trình lại. */
+/**
+ * Hạn bước kế tiếp cần trình (ngayTrinhLanhDao, tính ở backend/gcn.js):
+ * - done: hồ sơ đã giải quyết;  returned: lần trình LĐ gần nhất bị trả lại;
+ * - waiting: không chờ trình gì (đang niêm yết, đang chờ thuế, đã trình…) hoặc bước kế tiếp chưa có hạn;
+ * - late / today / urgent (≤ 2 ngày) / normal.
+ */
 export function getSubmitStatus(record) {
   const daysLeft = daysFromToday(record.ngayTrinhLanhDao);
   const submissions = submissionsOf(record);
   const last = submissions[submissions.length - 1];
-  if (!isDone(record) && last?.ketQua === 'TRA_LAI') return { status: 'returned', daysLeft, count: submissions.length };
-  if (isSubmitted(record)) return { status: 'submitted', daysLeft, count: submissions.length };
-  if (daysLeft === null) return { status: 'normal', daysLeft };
-  if (daysLeft < 0) return { status: 'late', daysLeft };
-  if (daysLeft === 0) return { status: 'today', daysLeft };
-  if (daysLeft <= URGENT_SUBMIT_DAYS) return { status: 'urgent', daysLeft };
-  return { status: 'normal', daysLeft };
+  const step = record.buocKeTiep ?? null;
+  if (isDone(record)) return { status: 'done', daysLeft, step };
+  if (last?.ketQua === 'TRA_LAI') return { status: 'returned', daysLeft, count: submissions.length, step };
+  if (daysLeft === null) return { status: 'waiting', daysLeft, step };
+  if (daysLeft < 0) return { status: 'late', daysLeft, step };
+  if (daysLeft === 0) return { status: 'today', daysLeft, step };
+  if (daysLeft <= URGENT_SUBMIT_DAYS) return { status: 'urgent', daysLeft, step };
+  return { status: 'normal', daysLeft, step };
 }
 
 export const isOverdue = (record) => getDeadlineStatus(record).status === 'overdue';

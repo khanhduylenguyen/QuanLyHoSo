@@ -2,6 +2,7 @@
 
 import { Check, Info, Lock, Minus } from 'lucide-react';
 import { ROLE_LABELS } from '@/lib/dossier';
+import { FIELD_LABELS as HISTORY_FIELD_LABELS } from '@/components/DossierHistory';
 
 const ROLE_ORDER = ['ADMIN', 'VAN_THU', 'CAN_BO'];
 
@@ -17,6 +18,14 @@ const FIELD_LABELS = {
   ngayGiaHan: 'Gia hạn (tự tính lại hạn)',
   ngayTrinhThucTe: 'Ngày trình thực tế',
   lanTrinh: 'Các lần trình LĐ',
+  buoc: 'Tình trạng (bước)',
+  soGCN: 'Số GCN',
+  giaiTrinh: 'Giải trình',
+  to: 'Tổ',
+  ghiChuUuTien: 'Ghi chú ưu tiên',
+  congNhanThemDat: 'Công nhận thêm đất',
+  capGCN: 'Cấp GCN',
+  ngayChuyen: 'Ngày chuyển',
   ngayKetThuc: 'Ngày kết thúc',
   canBoThuLy: 'Cán bộ thụ lý',
   ghiChuCanBo: 'Diễn giải / tiến độ',
@@ -118,7 +127,7 @@ export default function PermissionMatrix({ data }) {
 
   const fieldRows = data.fields.map((field) => ({
     key: field,
-    label: FIELD_LABELS[field] ?? field,
+    label: FIELD_LABELS[field] ?? HISTORY_FIELD_LABELS[field] ?? field,
     sensitive: sensitive.has(field),
     render: (item) => {
       if (sensitive.has(field) && !item.canViewSensitive) return <Allowed value={false} note="Bị ẩn" />;

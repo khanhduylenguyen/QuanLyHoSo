@@ -12,14 +12,14 @@ export default function PageHeader({ canCreate, onCreate, onImport, children }) 
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="text-lg font-bold tracking-tight text-slate-900 sm:text-xl">
-              Hệ thống Quản lý, Phân công &amp; Theo dõi Hạn Hồ sơ
+              Quản lý &amp; Theo dõi Hồ sơ Cấp Giấy chứng nhận
             </h1>
             <span className="rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-0.5 text-xs font-semibold text-indigo-700">
-              Auto-Deadline
+              Quy trình GCN
             </span>
           </div>
           <p className="mt-0.5 text-xs text-slate-500 sm:text-sm">
-            Tự động tính <strong>Ngày trình Lãnh đạo</strong> &amp; <strong>Ngày hết hạn</strong> khi nhập ngày vào •
+            Theo dõi từng bước <strong>Niêm yết → Dự thảo → Thuế → Cấp GCN</strong>, tự tính hạn trình &amp; hạn trả •
             Phân quyền dòng theo Cán bộ thụ lý &amp; Phân quyền cột bảo mật
           </p>
         </div>

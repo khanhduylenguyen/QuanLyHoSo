@@ -30,8 +30,9 @@ import {
   MUC_DO_UU_TIEN_LABELS,
   MUC_DO_UU_TIEN_RANK,
   MUC_DO_UU_TIEN_STYLES,
-  TRANG_THAI_LABELS,
-  TRANG_THAI_STYLES,
+  BUOC_KE_TIEP_LABELS,
+  BUOC_LABELS,
+  BUOC_STYLES,
   dayUnit,
   deadlineSource,
   formatDate,
@@ -69,8 +70,15 @@ const toTime = (value) => (value ? new Date(value).getTime() : 0);
 const pill = 'inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px]';
 
 function SubmitPill({ record }) {
-  const { status, daysLeft, count } = getSubmitStatus(record);
+  const { status, daysLeft, count, step } = getSubmitStatus(record);
   const times = count > 1 ? ` (lần ${count})` : '';
+  if (status === 'done') {
+    return (
+      <span className={`${pill} border border-emerald-200 bg-emerald-50 font-semibold text-emerald-700`}>
+        <CircleCheck className="h-3 w-3" /> Đã giải quyết
+      </span>
+    );
+  }
   if (status === 'returned') {
     return (
       <span className={`${pill} border border-orange-300 bg-orange-100 font-bold text-orange-800`}>
@@ -78,10 +86,10 @@ function SubmitPill({ record }) {
       </span>
     );
   }
-  if (status === 'submitted') {
+  if (status === 'waiting') {
     return (
-      <span className={`${pill} border border-emerald-200 bg-emerald-50 font-semibold text-emerald-700`}>
-        <CircleCheck className="h-3 w-3" /> Đã trình LĐ{times}
+      <span className={`${pill} bg-slate-100 font-medium text-slate-500`}>
+        {step ? 'Chưa đặt hạn' : record.buoc === 'NIEM_YET' ? 'Đang niêm yết' : 'Không chờ trình'}
       </span>
     );
   }
@@ -302,7 +310,7 @@ export default function DossierTable({
       }),
       columnHelper.accessor((row) => toTime(row.ngayVao), {
         id: 'ngayVao',
-        header: 'Ngày vào HS',
+        header: 'Ngày nhận',
         meta: { th: 'min-w-[145px]' },
         cell: ({ row }) =>
           canEditIntake ? (
@@ -326,19 +334,21 @@ export default function DossierTable({
         id: 'ngayTrinhLanhDao',
         header: () => (
           <span className="flex items-center gap-1 text-sky-300">
-            <Sparkles className="h-3.5 w-3.5" /> Ngày trình LĐ
+            <Sparkles className="h-3.5 w-3.5" /> Hạn bước tiếp
           </span>
         ),
         meta: { th: 'min-w-[165px]', td: 'bg-sky-50/20' },
         cell: ({ row }) => (
           <>
-            <div className="text-xs font-bold text-slate-900 sm:text-sm">{formatDate(row.original.ngayTrinhLanhDao)}</div>
+            {row.original.buocKeTiep && (
+              <div className="text-[11px] font-semibold text-sky-800">{BUOC_KE_TIEP_LABELS[row.original.buocKeTiep]}</div>
+            )}
+            {row.original.ngayTrinhLanhDao && (
+              <div className="text-xs font-bold text-slate-900 sm:text-sm">{formatDate(row.original.ngayTrinhLanhDao)}</div>
+            )}
             <div className="mt-1">
               <SubmitPill record={row.original} />
             </div>
-            {ruleByLoai[row.original.phanLoai] && (
-              <div className="mt-0.5 text-[10px] text-slate-400">(= Ngày vào + {ruleByLoai[row.original.phanLoai].trinh} {dayUnit(meta?.calendar)})</div>
-            )}
           </>
         ),
       }),
@@ -346,7 +356,7 @@ export default function DossierTable({
         id: 'ngayHetHan',
         header: () => (
           <span className="flex items-center gap-1 text-amber-300">
-            <Clock className="h-3.5 w-3.5" /> Ngày hết hạn
+            <Clock className="h-3.5 w-3.5" /> Hạn trả
           </span>
         ),
         meta: { th: 'min-w-[185px] bg-slate-900', td: 'bg-amber-50/20' },
@@ -356,13 +366,7 @@ export default function DossierTable({
             <div className="mt-1">
               <DuePill record={row.original} />
             </div>
-            {deadlineSource(row.original) ? (
-              <div className="mt-0.5 text-[10px] text-slate-400">({deadlineSource(row.original)})</div>
-            ) : (
-              ruleByLoai[row.original.phanLoai] && (
-                <div className="mt-0.5 text-[10px] text-slate-400">(= Ngày vào + {ruleByLoai[row.original.phanLoai].hetHan} {dayUnit(meta?.calendar)})</div>
-              )
-            )}
+            <div className="mt-0.5 text-[10px] text-slate-400">({deadlineSource(row.original, ruleByLoai[row.original.phanLoai]?.niemYet)})</div>
           </>
         ),
       }),
@@ -371,12 +375,13 @@ export default function DossierTable({
         enableSorting: false,
         header: () => (
           <span className="flex items-center gap-1.5">
-            <UserCog className="h-3.5 w-3.5 text-emerald-400" /> Cán bộ thụ lý
+            <UserCog className="h-3.5 w-3.5 text-emerald-400" /> Cán bộ thụ lý / Tổ
           </span>
         ),
         meta: { th: 'min-w-[175px]' },
-        cell: ({ row }) =>
-          canEditIntake ? (
+        cell: ({ row }) => (
+          <div className="space-y-1">
+          {canEditIntake ? (
             <InlineSelect
               value={row.original.canBoThuLy?._id ?? ''}
               onCommit={(value) => onInlineUpdate(row.original, { canBoThuLy: value })}
@@ -399,27 +404,30 @@ export default function DossierTable({
               <Lock className="h-3 w-3 text-slate-400" />
               <span>{getUserName(row.original.canBoThuLy) || 'Chưa phân công'}</span>
             </div>
-          ),
+          )}
+            {row.original.to && <div className="text-[11px] text-slate-500">Tổ: {row.original.to}</div>}
+          </div>
+        ),
       }),
-      columnHelper.accessor('trangThai', {
+      columnHelper.accessor('buoc', {
         enableSorting: false,
         header: () => (
           <span className="flex items-center gap-1.5">
-            <PenLine className="h-3.5 w-3.5 text-indigo-300" /> Trạng thái &amp; Ghi chú Cán bộ
+            <PenLine className="h-3.5 w-3.5 text-indigo-300" /> Tình trạng &amp; Diễn giải
           </span>
         ),
         meta: { th: 'min-w-[250px]' },
         cell: ({ row }) => {
-          const { trangThai, ghiChuCanBo } = row.original;
+          const { buoc, ghiChuCanBo } = row.original;
           return (
             <div className="space-y-1.5">
               <InlineSelect
-                value={trangThai}
-                onCommit={(value) => onInlineUpdate(row.original, { trangThai: value })}
-                aria-label={`Trạng thái hồ sơ ${row.original.maHoSo}`}
-                className={`rounded border px-2 py-1 text-xs font-semibold ${TRANG_THAI_STYLES[trangThai] || TRANG_THAI_STYLES.MOI_TIEP_NHAN}`}
+                value={buoc ?? 'DANG_THU_LY'}
+                onCommit={(value) => onInlineUpdate(row.original, { buoc: value })}
+                aria-label={`Tình trạng hồ sơ ${row.original.maHoSo}`}
+                className={`rounded border px-2 py-1 text-xs font-semibold ${BUOC_STYLES[buoc] || BUOC_STYLES.DANG_THU_LY}`}
               >
-                {Object.entries(TRANG_THAI_LABELS).map(([value, label]) => (
+                {Object.entries(BUOC_LABELS).map(([value, label]) => (
                   <option key={value} value={value}>
                     {label}
                   </option>

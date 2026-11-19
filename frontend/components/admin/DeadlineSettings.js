@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { format, parseISO } from 'date-fns';
-import { CalendarDays, CalendarX2, Info, LoaderCircle, Plus, RefreshCw, Save, X } from 'lucide-react';
+import { CalendarDays, CalendarX2, Info, ListChecks, LoaderCircle, Plus, RefreshCw, Save, X } from 'lucide-react';
 import { api } from '@/lib/api';
 import { phanLoaiStyle } from '@/lib/dossier';
 
@@ -19,7 +19,10 @@ const WEEKDAYS = [
 const numberInput =
   'w-20 rounded-lg border border-slate-300 px-2 py-1.5 text-center font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500';
 
-/** Trang cấu hình thời hạn: số ngày từng loại thủ tục, ngày làm việc / ngày lịch, ngày nghỉ, ngày lễ. */
+// Thứ tự hiển thị các bước quy trình GCN (nhãn lấy từ API: quyTrinhKeys).
+const QUY_TRINH_ORDER = ['trinhNY', 'niemYet', 'henTraCongNY', 'duThao', 'pcThue', 'trinhGCN'];
+
+/** Trang cấu hình thời hạn: số ngày từng bước quy trình GCN, hạn trả theo loại, ngày làm việc / ngày lịch, ngày lễ. */
 export default function DeadlineSettings({ pushToast }) {
   const [config, setConfig] = useState(null);
   const [newHoliday, setNewHoliday] = useState('');
@@ -44,6 +47,8 @@ export default function DeadlineSettings({ pushToast }) {
 
   const setRule = (code, field, value) =>
     update({ rules: { ...config.rules, [code]: { ...config.rules[code], [field]: value === '' ? '' : Number(value) } } });
+
+  const setStep = (key, value) => update({ quyTrinh: { ...config.quyTrinh, [key]: value === '' ? null : Number(value) } });
 
   const toggleWeekend = (day) =>
     update({
@@ -71,6 +76,7 @@ export default function DeadlineSettings({ pushToast }) {
         weekendDays: config.weekendDays,
         holidays: config.holidays,
         rules: config.rules,
+        quyTrinh: config.quyTrinh,
       });
       setConfig(data);
       setDirty(false);
@@ -85,7 +91,7 @@ export default function DeadlineSettings({ pushToast }) {
   };
 
   const runRecalc = async () => {
-    if (!window.confirm(`Tính lại hạn cho ${recalc.changed} hồ sơ chưa hoàn thành theo cấu hình mới?`)) return;
+    if (!window.confirm(`Tính lại hạn cho ${recalc.changed} hồ sơ chưa giải quyết theo cấu hình mới?`)) return;
     setBusyRecalc(true);
     try {
       const { data } = await api.adminRecalculateDeadlines(false);
@@ -113,27 +119,62 @@ export default function DeadlineSettings({ pushToast }) {
       <div className="flex items-start gap-2.5 rounded-xl border border-indigo-200 bg-indigo-50 p-4 text-xs text-indigo-900">
         <Info className="mt-0.5 h-4 w-4 shrink-0 text-indigo-600" />
         <p>
-          Hạn xử lý = <strong>Gia hạn</strong> → <strong>Ngày hẹn trả trên biên nhận</strong> → <strong>Ngày vào + số ngày</strong> của
-          loại thủ tục dưới đây. Đếm từ ngày làm việc tiếp theo sau ngày vào. Cấu hình mới áp dụng cho hồ sơ tiếp nhận / sửa từ lúc lưu;
-          hồ sơ cũ chỉ đổi khi bấm <em>Tính lại hạn</em>.
+          <strong>Hạn trả</strong> = Gia hạn → (Ngày hẹn trả trên biên nhận, hoặc Ngày nhận + số ngày của loại) + thời gian niêm yết.{' '}
+          <strong>Hạn từng bước</strong> tính từ mốc của bước trước (vd. hạn trình dự thảo tính từ ngày kết thúc niêm yết); để trống số
+          ngày thì bước đó chỉ ghi ngày tay, không tự tính hạn. Cấu hình mới áp dụng cho hồ sơ tiếp nhận / sửa từ lúc lưu; hồ sơ cũ chỉ
+          đổi khi bấm <em>Tính lại hạn</em>.
         </p>
       </div>
 
       {error && <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>}
 
       <div className="grid gap-5 lg:grid-cols-[1fr_360px]">
-        {/* Thời hạn từng loại */}
+        <div className="space-y-5">
+        {/* Số ngày từng bước quy trình GCN */}
+        <div className="overflow-hidden rounded-xl border border-emerald-200 bg-white shadow-sm">
+          <div className="flex items-center gap-1.5 border-b border-emerald-200 bg-emerald-50 px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-emerald-800">
+            <ListChecks className="h-4 w-4" /> Số ngày từng bước quy trình GCN
+          </div>
+          <table className="w-full text-left text-sm">
+            <tbody className="divide-y divide-slate-100">
+              {QUY_TRINH_ORDER.map((key) => {
+                const meta = config.quyTrinhKeys?.[key];
+                return (
+                  <tr key={key} className="hover:bg-slate-50">
+                    <td className="px-4 py-2 text-slate-700">
+                      {meta?.label ?? key}
+                      {!meta?.required && <span className="block text-[11px] text-slate-400">Để trống = chưa quy định, không tự tính hạn</span>}
+                    </td>
+                    <td className="w-32 px-4 py-2 text-center">
+                      <input
+                        type="number"
+                        min={meta?.required ? 1 : 0}
+                        value={config.quyTrinh?.[key] ?? ''}
+                        placeholder="—"
+                        onChange={(e) => setStep(key, e.target.value)}
+                        aria-label={meta?.label ?? key}
+                        className={`${numberInput} text-emerald-800`}
+                      />
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Hạn trả theo loại hồ sơ */}
         <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
           <div className="border-b border-slate-200 bg-slate-50 px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-slate-600">
-            Thời hạn theo loại thủ tục ({config.useWorkingDays ? 'ngày làm việc' : 'ngày lịch'})
+            Hạn trả mặc định theo loại hồ sơ ({config.useWorkingDays ? 'ngày làm việc' : 'ngày lịch'}) — khi không có Ngày hẹn trả
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
               <thead className="bg-slate-800 text-xs uppercase tracking-wider text-slate-100">
                 <tr>
-                  <th className="px-4 py-2.5">Loại thủ tục</th>
-                  <th className="px-4 py-2.5 text-center">Hạn trình LĐ</th>
-                  <th className="px-4 py-2.5 text-center">Hạn xử lý</th>
+                  <th className="px-4 py-2.5">Loại hồ sơ</th>
+                  <th className="px-4 py-2.5 text-center">Có niêm yết</th>
+                  <th className="px-4 py-2.5 text-center">Hạn trả</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -144,23 +185,14 @@ export default function DeadlineSettings({ pushToast }) {
                         {type.moTa}
                       </span>
                     </td>
-                    <td className="px-4 py-2 text-center">
-                      <input
-                        type="number"
-                        min={1}
-                        value={config.rules[type.ma]?.trinh ?? ''}
-                        onChange={(e) => setRule(type.ma, 'trinh', e.target.value)}
-                        aria-label={`Hạn trình lãnh đạo — ${type.moTa}`}
-                        className={numberInput}
-                      />
-                    </td>
+                    <td className="px-4 py-2 text-center text-xs text-slate-600">{type.niemYet ? 'Có' : 'Không'}</td>
                     <td className="px-4 py-2 text-center">
                       <input
                         type="number"
                         min={1}
                         value={config.rules[type.ma]?.hetHan ?? ''}
                         onChange={(e) => setRule(type.ma, 'hetHan', e.target.value)}
-                        aria-label={`Hạn xử lý — ${type.moTa}`}
+                        aria-label={`Hạn trả — ${type.moTa}`}
                         className={`${numberInput} text-amber-800`}
                       />
                     </td>
@@ -169,6 +201,7 @@ export default function DeadlineSettings({ pushToast }) {
               </tbody>
             </table>
           </div>
+        </div>
         </div>
 
         <div className="space-y-5">
@@ -269,8 +302,8 @@ export default function DeadlineSettings({ pushToast }) {
         <div className="text-sm text-slate-600">
           {recalc && !recalc.done && (
             <span>
-              Với cấu hình này, <strong>{recalc.changed}</strong> / {recalc.checked} hồ sơ chưa hoàn thành sẽ đổi hạn nếu tính lại
-              (hồ sơ có Ngày hẹn trả / Gia hạn chỉ đổi hạn trình LĐ).
+              Với cấu hình này, <strong>{recalc.changed}</strong> / {recalc.checked} hồ sơ chưa giải quyết sẽ đổi hạn nếu tính lại
+              (hạn các bước có cấu hình số ngày sẽ ghi đè ngày nhập tay; hồ sơ có Gia hạn giữ hạn trả).
             </span>
           )}
           {recalc?.done && <span className="text-emerald-700">Đã tính lại hạn cho {recalc.changed} hồ sơ.</span>}
