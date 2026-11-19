@@ -125,8 +125,9 @@ const OFFICER_ALIASES = {
   'Thanh Trai': ['THANH TRAI', 'TRANH TRAI', 'A TRAI', 'ANH TRAI', 'TRAI'],
   'Khánh Nhân': ['KHANH NHAN', 'NHAN'],
   'Thanh Nhân': ['THANH NHAN'],
-  'Tấn Trường': ['TAN TRUONG', 'A TRUONG', 'ANH TRUONG', 'TRUONG'],
-  'Phi Trường': ['PHI TRUONG'],
+  'Tấn Trường': ['TAN TRUONG', 'A TRUONG', 'ANH TRUONG'],
+  // Sổ GCN ghi tắt "TRƯỜNG" = Phi Trường (đã xác nhận).
+  'Phi Trường': ['PHI TRUONG', 'TRUONG'],
   'Quang Huy': ['QUANG HUY', 'HUY'],
   'Viết Huy': ['VIET HUY'],
   'Trúc Linh': ['TRUC LINH', 'CHI LINH', 'LINH'],
