@@ -339,8 +339,8 @@ function toTitleCase(name) {
  * File không có cột "Trễ hạn" (vd. file mẫu) → undefined: báo cáo tự so sánh ngày.
  */
 function registerLateFlag(r) {
-  if (isMarked(r.treHanX)) return true;
-  return r.hasLateColumn ? false : undefined;
+  // Chỉ dấu trễ hạn mới có nghĩa; ô trống không khẳng định đúng hạn (sổ GCN hầu như bỏ trống cột này).
+  return isMarked(r.treHanX) ? true : undefined;
 }
 
 /** Bước quy trình: sổ GCN theo cột Tình trạng, sổ khác suy từ trạng thái. */

@@ -5,7 +5,7 @@
  * - Tiếp nhận trong kỳ:   Ngày vào ∈ [từ, đến]
  * - Giải quyết trong kỳ:  Hoàn thành và Ngày kết thúc ∈ [từ, đến]
  *     · Đúng hạn: Ngày kết thúc ≤ Hạn xử lý   · Trễ hạn: ngược lại
- *     · Hồ sơ nhập từ sổ còn giữ đánh giá của sổ (treHanTheoSo) thì dùng đánh giá đó thay cho so sánh ngày
+ *     · Sổ đánh dấu trễ hạn (treHanTheoSo = true) thì tính trễ; ô trống trong sổ KHÔNG coi là đúng hạn — vẫn so sánh ngày
  * - Hoàn thành không ghi ngày: Hoàn thành, không có Ngày kết thúc, Ngày vào trong kỳ (sổ cũ chỉ đánh "x")
  * - Tồn cuối kỳ: Ngày vào ≤ đến và chưa hoàn thành tính tới cuối kỳ
  *     · trong đó quá hạn: Hạn xử lý < min(đến, hôm nay)
@@ -29,9 +29,9 @@ const officerName = (d) => d.canBoThuLy?.hoTen || d.canBoThuLy?.username || UNAS
 const typeName = (code) => PHAN_LOAI_RULES[code]?.moTa ?? code;
 const daysBetween = (fromDay, toDay) => Math.round((Date.parse(toDay) - Date.parse(fromDay)) / 86400000);
 
-/** Hồ sơ đã hoàn thành có trễ hạn không: đánh giá của sổ (nếu còn) → so sánh Ngày kết thúc với Hạn xử lý. */
+/** Hồ sơ đã hoàn thành có trễ hạn không: sổ đánh dấu trễ, hoặc Ngày kết thúc sau Hạn xử lý. */
 function isResolvedLate(d) {
-  if (typeof d.treHanTheoSo === 'boolean') return d.treHanTheoSo;
+  if (d.treHanTheoSo === true) return true;
   const due = day(d.ngayHetHan);
   const done = day(d.ngayKetThuc);
   return Boolean(due && done && done > due);
@@ -41,7 +41,7 @@ function isResolvedLate(d) {
 function deadlineState(d, today) {
   const due = day(d.ngayHetHan);
   if (d.trangThai === 'HOAN_THANH') {
-    if (typeof d.treHanTheoSo !== 'boolean' && (!d.ngayKetThuc || !due)) return 'Hoàn thành';
+    if (d.treHanTheoSo !== true && (!d.ngayKetThuc || !due)) return 'Hoàn thành';
     return isResolvedLate(d) ? 'Trễ hạn' : 'Đúng hạn';
   }
   if (!due) return 'Đang xử lý';
